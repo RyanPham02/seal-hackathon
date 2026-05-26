@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Trophy, Medal, Award, Download, Filter, TrendingUp } from "lucide-react";
+import { Trophy, Medal, Award, Download, Filter, TrendingUp, Crown } from "lucide-react";
 
 const RANKINGS = [
   { rank: 1,  team: "CodeCraft",    track: "AI & ML",    score: 92.4, judges: 3, status: "finalist" },
@@ -45,7 +45,7 @@ export default function RankingsPage() {
       <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", alignItems: "flex-end", justifyContent: "center" }}>
         {/* 2nd */}
         <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #94a3b8", paddingTop: "1.5rem" }}>
-          <div style={{ fontSize: "2rem" }}>🥈</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Crown size={32} style={{ color: "#94a3b8" }} /></div>
           <div style={{ fontWeight: 700, marginTop: "0.5rem" }}>{RANKINGS[1].team}</div>
           <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{RANKINGS[1].track}</div>
           <div style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--font-display)", color: "#94a3b8", marginTop: "0.5rem" }}>
@@ -54,7 +54,7 @@ export default function RankingsPage() {
         </div>
         {/* 1st */}
         <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #f59e0b", paddingTop: "2rem", transform: "translateY(-12px)", boxShadow: "0 0 30px rgba(245,158,11,0.2)" }}>
-          <div style={{ fontSize: "2.5rem" }}>🏆</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Crown size={42} style={{ color: "#f59e0b", filter: "drop-shadow(0 0 8px rgba(245,158,11,0.5))" }} /></div>
           <div style={{ fontWeight: 800, fontSize: "1.1rem", marginTop: "0.5rem", background: "linear-gradient(135deg,#f59e0b,#fbbf24)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
             {RANKINGS[0].team}
           </div>
@@ -65,7 +65,7 @@ export default function RankingsPage() {
         </div>
         {/* 3rd */}
         <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #b45309", paddingTop: "1.5rem" }}>
-          <div style={{ fontSize: "2rem" }}>🥉</div>
+          <div style={{ display: "flex", justifyContent: "center" }}><Crown size={32} style={{ color: "#b45309" }} /></div>
           <div style={{ fontWeight: 700, marginTop: "0.5rem" }}>{RANKINGS[2].team}</div>
           <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{RANKINGS[2].track}</div>
           <div style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--font-display)", color: "#b45309", marginTop: "0.5rem" }}>

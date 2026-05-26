@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Target, Clock, MessageSquare, Lock, CheckCircle, ChevronLeft, Send, AlertCircle } from "lucide-react";
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from "recharts";
 import Link from "next/link";
 
 const CRITERIA = [
@@ -83,38 +84,55 @@ export default function JudgingScorePage({ params }: { params: { id: string } })
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          {CRITERIA.map(c => (
-            <div key={c.id}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{c.name}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--color-text-3)", marginTop: "0.15rem" }}>{c.description}</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                  <span className="badge badge-neutral">{c.weight}%</span>
-                  <div style={{
-                    minWidth: 52, textAlign: "center",
-                    fontSize: "1.3rem", fontWeight: 800, fontFamily: "var(--font-display)",
-                    color: getScoreColor(scores[c.id] ?? 0),
-                  }}>
-                    {scores[c.id] ?? 0}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 350px", gap: "2rem" }}>
+          {/* Sliders */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+            {CRITERIA.map(c => (
+              <div key={c.id}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{c.name}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-3)", marginTop: "0.15rem" }}>{c.description}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                    <span className="badge badge-neutral">{c.weight}%</span>
+                    <div style={{ minWidth: 52, textAlign: "center", fontSize: "1.3rem", fontWeight: 800, fontFamily: "var(--font-display)", color: getScoreColor(scores[c.id] ?? 0) }}>
+                      {scores[c.id] ?? 0}
+                    </div>
                   </div>
                 </div>
+                <input
+                  type="range" min="0" max="100" step="1"
+                  className="score-slider"
+                  disabled={locked}
+                  value={scores[c.id] ?? 0}
+                  onChange={e => setScores({ ...scores, [c.id]: +e.target.value })}
+                  style={{ background: `linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) ${scores[c.id] ?? 0}%, rgba(148,163,184,0.15) ${scores[c.id] ?? 0}%, rgba(148,163,184,0.15) 100%)` }}
+                />
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "var(--color-text-3)", marginTop: "0.25rem" }}>
+                  <span>0 – Poor</span><span>50 – Average</span><span>100 – Excellent</span>
+                </div>
               </div>
-              <input
-                type="range" min="0" max="100" step="1"
-                className="score-slider"
-                disabled={locked}
-                value={scores[c.id] ?? 0}
-                onChange={e => setScores({ ...scores, [c.id]: +e.target.value })}
-                style={{ background: `linear-gradient(to right, var(--color-primary) 0%, var(--color-primary) ${scores[c.id] ?? 0}%, rgba(148,163,184,0.15) ${scores[c.id] ?? 0}%, rgba(148,163,184,0.15) 100%)` }}
-              />
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.68rem", color: "var(--color-text-3)", marginTop: "0.25rem" }}>
-                <span>0 – Poor</span><span>50 – Average</span><span>100 – Excellent</span>
-              </div>
+            ))}
+          </div>
+
+          {/* Radar Chart */}
+          <div style={{ background: "rgba(15,23,42,0.4)", borderRadius: "var(--radius-md)", padding: "1rem", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <h4 style={{ fontSize: "0.85rem", color: "var(--color-text-2)", marginBottom: "1rem", alignSelf: "flex-start" }}>SCORE DISTRIBUTION</h4>
+            <div style={{ width: "100%", height: 250 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={CRITERIA.map(c => ({ subject: c.name.split(" ")[0], A: scores[c.id] ?? 0, fullMark: 100 }))}>
+                  <PolarGrid stroke="rgba(255,255,255,0.1)" />
+                  <PolarAngleAxis dataKey="subject" tick={{ fill: "var(--color-text-3)", fontSize: 11 }} />
+                  <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                  <Radar name="Score" dataKey="A" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.4} />
+                </RadarChart>
+              </ResponsiveContainer>
             </div>
-          ))}
+            <div style={{ marginTop: "auto", fontSize: "0.75rem", color: "var(--color-text-3)", textAlign: "center" }}>
+              Visual representation of team performance across criteria
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Trophy, Users, Calendar, Target, TrendingUp, TrendingDown,
   Clock, CheckCircle, AlertCircle, ArrowRight, Star, Zap,
@@ -7,31 +7,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import styles from "./page.module.css";
-
-const STATS = [
-  {
-    label: "Active Events",    value: "3",    icon: Calendar, color: "#6366f1",
-    trend: "+1 from last month", up: true,
-  },
-  {
-    label: "Registered Teams", value: "48",   icon: Users,   color: "#8b5cf6",
-    trend: "+12 this week",     up: true,
-  },
-  {
-    label: "Total Submissions", value: "124", icon: Target,  color: "#06b6d4",
-    trend: "+18 today",         up: true,
-  },
-  {
-    label: "Judges Active",    value: "16",   icon: Star,    color: "#f59e0b",
-    trend: "2 pending assign", up: false,
-  },
-];
-
-const EVENTS = [
-  { id: 1, name: "SEAL Spring 2026", status: "active",   tracks: 4, teams: 22, round: "Qualifying Round", deadline: "May 30, 2026" },
-  { id: 2, name: "SEAL Summer 2026", status: "upcoming", tracks: 3, teams: 0,  round: "Registration",     deadline: "Jun 15, 2026" },
-  { id: 3, name: "SEAL Fall 2025",   status: "ended",    tracks: 4, teams: 26, round: "Completed",        deadline: "Dec 01, 2025" },
-];
+import { databaseService } from "../../services/databaseService";
 
 const RECENT_ACTIVITY = [
   { icon: Users,       text: "Team **CodeCraft** registered for Track A",        time: "2m ago",   type: "team" },
@@ -48,6 +24,9 @@ const UPCOMING = [
 ];
 
 const STATUS_BADGE: Record<string, string> = {
+  Active:   "badge-success",
+  Upcoming: "badge-primary",
+  Ended:    "badge-neutral",
   active:   "badge-success",
   upcoming: "badge-primary",
   ended:    "badge-neutral",
@@ -55,10 +34,39 @@ const STATUS_BADGE: Record<string, string> = {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<"all" | "active" | "upcoming">("all");
+  const [events, setEvents] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<any>(null);
 
-  const filteredEvents = EVENTS.filter(e =>
-    activeTab === "all" ? true : e.status === activeTab
-  );
+  useEffect(() => {
+    // Load from local storage DB
+    setEvents(databaseService.getEvents());
+    setMetrics(databaseService.getDashboardMetrics());
+  }, []);
+
+  const filteredEvents = useMemo(() => {
+    return events.filter(e =>
+      activeTab === "all" ? true : e.status.toLowerCase() === activeTab.toLowerCase()
+    );
+  }, [activeTab, events]);
+
+  const dynamicStats = [
+    {
+      label: "Active Events",    value: metrics?.activeEvents || "0",    icon: Calendar, color: "#6366f1",
+      trend: "Current running", up: true,
+    },
+    {
+      label: "Registered Teams", value: metrics?.totalTeams || "0",   icon: Users,   color: "#8b5cf6",
+      trend: "Total in system",     up: true,
+    },
+    {
+      label: "Pending Approvals", value: metrics?.pendingApprovals || "0", icon: AlertCircle,  color: "#f59e0b",
+      trend: "Needs your review",         up: false,
+    },
+    {
+      label: "Judges Active",    value: "16",   icon: Star,    color: "#06b6d4",
+      trend: "Ready to score", up: true,
+    },
+  ];
 
   return (
     <div>
@@ -66,7 +74,7 @@ export default function DashboardPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Dashboard Overview</h1>
-          <p className="page-subtitle">Welcome back, Chi Le · SEAL Spring 2026 is live 🚀</p>
+          <p className="page-subtitle">Welcome back · {metrics?.upcomingEvent || "SEAL Hackathon"} is live 🚀</p>
         </div>
         <div style={{ display: "flex", gap: "0.75rem" }}>
           <Link href="/dashboard/events/create">
@@ -77,7 +85,7 @@ export default function DashboardPage() {
 
       {/* Stats */}
       <div className="grid-4" style={{ marginBottom: "2rem" }}>
-        {STATS.map((s) => {
+        {dynamicStats.map((s) => {
           const Icon = s.icon;
           return (
             <div key={s.label} className="stat-card">
@@ -125,26 +133,32 @@ export default function DashboardPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
               {filteredEvents.map((ev) => (
-                <Link key={ev.id} href={`/dashboard/events/${ev.id}`} style={{ textDecoration: "none" }}>
+                <Link key={ev.id} href={`/dashboard/events`} style={{ textDecoration: "none" }}>
                   <div className={`glass-card ${styles.eventCard}`}>
                     <div className={styles.eventTop}>
                       <h4 className={styles.eventName}>{ev.name}</h4>
-                      <span className={`badge ${STATUS_BADGE[ev.status]}`}>
+                      <span className={`badge ${STATUS_BADGE[ev.status] || "badge-neutral"}`}>
                         {ev.status.charAt(0).toUpperCase() + ev.status.slice(1)}
                       </span>
                     </div>
                     <p className={styles.eventRound}>
                       <Zap size={13} style={{ color: "var(--color-cyan)" }} />
-                      {ev.round}
+                      Round: {ev.currentRound || "Registration"}
                     </p>
                     <div className={styles.eventMeta}>
-                      <span><Users size={12} /> {ev.teams} teams</span>
-                      <span><Target size={12} /> {ev.tracks} tracks</span>
-                      <span><Clock size={12} /> {ev.deadline}</span>
+                      <span><Users size={12} /> {ev.teamsCount || 0} teams</span>
+                      <span><Target size={12} /> {ev.tracksCount || 0} tracks</span>
+                      <span><Clock size={12} /> {new Date(ev.endDate).toLocaleDateString()}</span>
                     </div>
                   </div>
                 </Link>
               ))}
+              {filteredEvents.length === 0 && (
+                 <div className="empty-state">
+                   <Calendar size={48} className="empty-icon" />
+                   <div className="empty-title">No events found</div>
+                 </div>
+              )}
             </div>
           </div>
 
@@ -179,11 +193,10 @@ export default function DashboardPage() {
             </div>
             <div className={styles.quickActions}>
               {[
-                { label: "Create Event",    href: "/dashboard/events/create",  icon: Calendar, color: "#6366f1" },
-                { label: "Register Team",   href: "/dashboard/teams/create",   icon: Users,   color: "#8b5cf6" },
+                { label: "Create Event",    href: "/dashboard/events",  icon: Calendar, color: "#6366f1" },
+                { label: "Register Team",   href: "/dashboard/teams",   icon: Users,   color: "#8b5cf6" },
                 { label: "Score Submissions",href: "/dashboard/judging",       icon: Target,  color: "#06b6d4" },
                 { label: "View Rankings",   href: "/dashboard/rankings",       icon: Trophy,  color: "#f59e0b" },
-                { label: "Analytics",       href: "/dashboard/analytics",      icon: BarChart2,color: "#10b981" },
                 { label: "Manage Prizes",   href: "/dashboard/prizes",         icon: Award,   color: "#f43f5e" },
               ].map(q => {
                 const Icon = q.icon;

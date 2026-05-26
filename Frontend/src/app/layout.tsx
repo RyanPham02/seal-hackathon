@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import ThemeProvider from "../components/ThemeProvider";
+import AIChatbotWrapper from "../components/AIChatbotWrapper";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -27,7 +29,12 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <ThemeProvider>
+          {children}
+          <AIChatbotWrapper />
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

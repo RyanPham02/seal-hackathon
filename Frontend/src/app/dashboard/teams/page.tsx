@@ -1,123 +1,185 @@
 "use client";
-import { useState } from "react";
-import { Plus, Search, Users, Zap, ChevronRight, UserCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Users, Shield, LogOut } from "lucide-react";
 import Link from "next/link";
-
-const TEAMS = [
-  { id: 1, name: "CodeCraft",    leader: "Nguyen Van A", members: 4, track: "AI & Machine Learning", status: "active",   university: "FPT",      submission: true },
-  { id: 2, name: "InnovateSEAL", leader: "Le Thi B",     members: 3, track: "Web Development",       status: "active",   university: "Mixed",    submission: true },
-  { id: 3, name: "AlphaCoders",  leader: "Tran Van C",   members: 5, track: "Mobile App",            status: "active",   university: "External", submission: false },
-  { id: 4, name: "ByteBuilders", leader: "Pham Van D",   members: 4, track: "Open Innovation",       status: "active",   university: "FPT",      submission: false },
-  { id: 5, name: "TechVision",   leader: "Vu Thi E",     members: 3, track: "AI & Machine Learning", status: "pending",  university: "FPT",      submission: false },
-  { id: 6, name: "DevForge",     leader: "Hoang Van F",  members: 4, track: "Web Development",       status: "pending",  university: "External", submission: false },
-];
-
-const UNI_COLOR: Record<string, string> = { FPT: "badge-primary", Mixed: "badge-cyan", External: "badge-warning" };
+import { useRouter } from "next/navigation";
+import { App, Modal } from "antd";
 
 export default function TeamsPage() {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const router = useRouter();
+  const { message } = App.useApp();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [myTeam, setMyTeam] = useState<any>(null);
 
-  const filtered = TEAMS.filter(t => {
-    const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) || t.leader.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === "all" ? true : filter === "pending" ? t.status === "pending" : filter === "submitted" ? t.submission : true;
-    return matchSearch && matchFilter;
-  });
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("currentUser") || "{}");
+    setCurrentUser(user);
+
+    const team = localStorage.getItem(`myTeam_${user.email}`);
+    if (team) {
+      setMyTeam(JSON.parse(team));
+    }
+  }, []);
+
+  const handleCreateTeam = () => {
+    const newTeam = {
+      id: Date.now().toString(),
+      name: "New Awesome Team",
+      description: "We are going to win SEAL!",
+      status: "pending",
+      members: [
+        { name: currentUser.name, role: "Leader", email: currentUser.email }
+      ]
+    };
+    localStorage.setItem(`myTeam_${currentUser.email}`, JSON.stringify(newTeam));
+    setMyTeam(newTeam);
+    message.success("Team created successfully! You are the Leader.");
+  };
+
+  const handleKick = (email: string) => {
+    if (!myTeam) return;
+    const updatedMembers = myTeam.members.filter((m:any) => m.email !== email);
+    const updatedTeam = { ...myTeam, members: updatedMembers };
+    localStorage.setItem(`myTeam_${currentUser.email}`, JSON.stringify(updatedTeam));
+    setMyTeam(updatedTeam);
+    message.success("Member removed from team.");
+  };
+
+  const handleLeave = () => {
+    if (!myTeam) return;
+    const isLeader = myTeam.members.find((m:any) => m.email === currentUser.email)?.role === "Leader";
+    
+    if (isLeader && myTeam.members.length > 1) {
+      Modal.confirm({
+        title: "Transfer Leadership Required",
+        content: "You are the Leader. You must transfer leadership to another member or disband the team before leaving.",
+        okText: "Disband Team",
+        cancelText: "Cancel",
+        onOk: () => {
+          localStorage.removeItem(`myTeam_${currentUser.email}`);
+          setMyTeam(null);
+          message.success("Team disbanded successfully.");
+        }
+      });
+    } else {
+      Modal.confirm({
+        title: "Leave Team",
+        content: "Are you sure you want to leave this team?",
+        onOk: () => {
+          localStorage.removeItem(`myTeam_${currentUser.email}`);
+          setMyTeam(null);
+          message.success("You have left the team.");
+        }
+      });
+    }
+  };
+
+  if (!currentUser) return null;
+
+  if (!myTeam) {
+    return (
+      <div style={{ height: "calc(100vh - 150px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="empty-state" style={{ padding: "4rem 2rem", maxWidth: 500, margin: "0 auto", background: "var(--color-bg)", border: "1px dashed var(--color-border)", borderRadius: "var(--radius-lg)" }}>
+          <div style={{ width: 80, height: 80, borderRadius: "50%", background: "rgba(99,102,241,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 1.5rem" }}>
+            <Users size={40} style={{ color: "var(--color-primary)" }} />
+          </div>
+          <h2 style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>You are not in a team</h2>
+          <p style={{ color: "var(--color-text-2)", marginBottom: "2rem" }}>Join an existing team or create a new one to participate in the hackathon.</p>
+          <button className="btn btn-primary btn-lg" onClick={handleCreateTeam} style={{ width: "100%", justifyContent: "center" }}>
+            <Plus size={18} /> Create New Team
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isLeader = myTeam.members.find((m:any) => m.email === currentUser.email)?.role === "Leader";
 
   return (
-    <div>
+    <div style={{ maxWidth: 900 }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Team Management</h1>
-          <p className="page-subtitle">{TEAMS.length} teams · {TEAMS.filter(t => t.status === "pending").length} pending approval</p>
+          <h1 className="page-title">{myTeam.name}</h1>
+          <p className="page-subtitle">{myTeam.description}</p>
         </div>
-        <Link href="/dashboard/teams/create">
-          <button className="btn btn-primary"><Plus size={16} /> Create Team</button>
-        </Link>
-      </div>
-
-      {/* Stats */}
-      <div className="grid-4" style={{ marginBottom: "2rem" }}>
-        {[
-          { label: "Total Teams",     val: TEAMS.length,                                 color: "#6366f1" },
-          { label: "Active Teams",    val: TEAMS.filter(t=>t.status==="active").length,  color: "#10b981" },
-          { label: "Submitted",       val: TEAMS.filter(t=>t.submission).length,         color: "#06b6d4" },
-          { label: "Pending Approval",val: TEAMS.filter(t=>t.status==="pending").length, color: "#f59e0b" },
-        ].map(s => (
-          <div key={s.label} className="glass-card" style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-            <div style={{ fontSize: "2rem", fontWeight: 800, fontFamily: "var(--font-display)", color: s.color }}>{s.val}</div>
-            <div style={{ fontSize: "0.82rem", color: "var(--color-text-3)", fontWeight: 500 }}>{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter */}
-      <div style={{ display: "flex", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        <div className="search-bar" style={{ flex: 1, minWidth: 240 }}>
-          <Search size={15} style={{ color: "var(--color-text-3)" }} />
-          <input className="search-input" placeholder="Search teams or leaders…" value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-        <div className="tabs">
-          {[{k:"all",l:"All"},{k:"pending",l:"Pending"},{k:"submitted",l:"Submitted"}].map(f => (
-            <button key={f.k} className={`tab-btn ${filter===f.k?"active":""}`} onClick={() => setFilter(f.k)}>{f.l}</button>
-          ))}
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          {isLeader && (
+            <button className="btn btn-secondary" onClick={() => {
+              if (myTeam.members.length >= 5) {
+                message.error("Team is full (max 5 members).");
+                return;
+              }
+              const mockMember = { name: `Student ${myTeam.members.length + 1}`, email: `student${myTeam.members.length + 1}@fpt.edu.vn`, role: "Member" };
+              const updated = { ...myTeam, members: [...myTeam.members, mockMember] };
+              localStorage.setItem(`myTeam_${currentUser.email}`, JSON.stringify(updated));
+              setMyTeam(updated);
+              message.success("Mock member added.");
+            }}>
+              <Plus size={16} /> Add Member (Mock)
+            </button>
+          )}
+          <button className="btn btn-ghost danger" onClick={handleLeave}>
+            <LogOut size={16} /> Leave Team
+          </button>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="table-wrapper">
-        <table className="table">
-          <thead><tr>
-            <th>Team</th><th>Leader</th><th>Members</th><th>Track</th><th>University</th><th>Submission</th><th>Status</th><th>Actions</th>
-          </tr></thead>
-          <tbody>
-            {filtered.map(t => (
-              <tr key={t.id}>
-                <td className="table-cell-primary">
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    <div className="avatar-placeholder" style={{ width: 30, height: 30, fontSize: "0.72rem" }}>
-                      {t.name.substring(0,2).toUpperCase()}
-                    </div>
-                    {t.name}
-                  </div>
-                </td>
-                <td>{t.leader}</td>
-                <td><span className="badge badge-neutral"><Users size={10} /> {t.members}</span></td>
-                <td><span style={{ fontSize: "0.8rem" }}>{t.track}</span></td>
-                <td><span className={`badge ${UNI_COLOR[t.university]}`}>{t.university}</span></td>
-                <td>
-                  {t.submission
-                    ? <span className="badge badge-success">Submitted</span>
-                    : <span className="badge badge-neutral">Pending</span>}
-                </td>
-                <td>
-                  <span className={`badge ${t.status==="active"?"badge-success":"badge-warning"}`}>
-                    {t.status.charAt(0).toUpperCase()+t.status.slice(1)}
-                  </span>
-                </td>
-                <td>
-                  <div style={{ display: "flex", gap: "0.4rem" }}>
-                    <Link href={`/dashboard/teams/${t.id}`}>
-                      <button className="btn btn-ghost btn-sm">View <ChevronRight size={12} /></button>
-                    </Link>
-                    {t.status === "pending" && (
-                      <button className="btn btn-primary btn-sm"><UserCheck size={13} /> Approve</button>
-                    )}
-                  </div>
-                </td>
+      <div className="glass-card" style={{ marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+          <h3 style={{ fontSize: "1.2rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Users size={18} style={{ color: "var(--color-primary)" }} />
+            Team Members ({myTeam.members.length}/5)
+          </h3>
+          <span className={`badge ${myTeam.status === "pending" ? "badge-warning" : "badge-success"}`}>
+            {myTeam.status.toUpperCase()}
+          </span>
+        </div>
+
+        <div className="table-wrapper">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Role</th>
+                <th>Email</th>
+                {isLeader && <th style={{ textAlign: "right" }}>Actions</th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {filtered.length === 0 && (
-        <div className="empty-state">
-          <Users size={48} className="empty-icon" />
-          <div className="empty-title">No teams found</div>
-          <div className="empty-desc">Try adjusting your search or filter</div>
+            </thead>
+            <tbody>
+              {myTeam.members.map((m: any, idx: number) => (
+                <tr key={idx}>
+                  <td className="table-cell-primary">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <div className="avatar-placeholder" style={{ width: 32, height: 32, fontSize: "0.8rem" }}>
+                        {m.name.charAt(0)}
+                      </div>
+                      <span style={{ fontWeight: 500 }}>{m.name}</span>
+                      {m.email === currentUser.email && <span className="badge badge-neutral">You</span>}
+                    </div>
+                  </td>
+                  <td>
+                    {m.role === "Leader" ? (
+                      <span className="badge badge-primary"><Shield size={12} style={{ marginRight: 4 }} /> Leader</span>
+                    ) : (
+                      <span className="badge badge-neutral">Member</span>
+                    )}
+                  </td>
+                  <td><span style={{ color: "var(--color-text-2)" }}>{m.email}</span></td>
+                  {isLeader && (
+                    <td style={{ textAlign: "right" }}>
+                      {m.email !== currentUser.email && (
+                        <button className="btn btn-ghost danger btn-sm" onClick={() => handleKick(m.email)}>
+                          Kick
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 }

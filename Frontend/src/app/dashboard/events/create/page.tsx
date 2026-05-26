@@ -2,11 +2,16 @@
 import { useState } from "react";
 import { Calendar, ChevronLeft, Plus, Trash2, GripVertical, Clock, Users, Target } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { databaseService } from "@/services/databaseService";
+import { App } from "antd";
 
 const TRACKS_OPTIONS = ["AI & Machine Learning", "Web Development", "Mobile App", "Cybersecurity", "Open Innovation"];
 const SEASONS = ["Spring", "Summer", "Fall"];
 
 export default function CreateEventPage() {
+  const router = useRouter();
+  const { message } = App.useApp();
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({
     name: "", season: "Spring", year: new Date().getFullYear().toString(),
@@ -35,6 +40,27 @@ export default function CreateEventPage() {
 
   const toggleTrack = (t: string) =>
     setSelectedTracks(sel => sel.includes(t) ? sel.filter(x => x !== t) : [...sel, t]);
+
+  const handleCreateEvent = () => {
+    if (!form.name) {
+      message.error("Please enter an event name.");
+      return;
+    }
+    const newEvent = {
+      id: `EV-${Date.now()}`,
+      name: form.name,
+      status: "Upcoming",
+      participants: 0,
+      daysLeft: 30,
+      season: form.season,
+      year: form.year,
+      tracks: selectedTracks,
+    };
+    databaseService.addEvent(newEvent);
+    databaseService.logAction("Admin", `Created new event: ${form.name}`);
+    message.success("Event created successfully!");
+    router.push("/dashboard/events");
+  };
 
   return (
     <div style={{ maxWidth: 760 }}>
@@ -220,7 +246,7 @@ export default function CreateEventPage() {
         {step > 1 && <button className="btn btn-secondary" onClick={() => setStep(step-1)}>← Back</button>}
         {step < 4
           ? <button className="btn btn-primary" onClick={() => setStep(step+1)}>Continue →</button>
-          : <button className="btn btn-primary" disabled={totalWeight !== 100}>
+          : <button className="btn btn-primary" disabled={totalWeight !== 100} onClick={handleCreateEvent}>
               <Calendar size={16} /> Create Event
             </button>
         }

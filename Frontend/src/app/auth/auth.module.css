@@ -6,7 +6,93 @@
   background: var(--color-bg);
   position: relative;
   overflow: hidden;
+}
+
+.splitContainer {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.leftSide {
+  flex: 0 0 45%;
+  min-width: 450px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   padding: 2rem;
+  position: relative;
+  z-index: 10;
+  background: var(--color-bg);
+}
+
+.rightSide {
+  flex: 1;
+  background-image: url('https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=2070&auto=format&fit=crop');
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 80px;
+  color: #fff;
+}
+
+.rightOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(135deg, rgba(8, 12, 24, 0.95) 0%, rgba(30, 58, 138, 0.7) 100%);
+  z-index: 1;
+}
+
+.rightContent {
+  position: relative;
+  z-index: 2;
+  max-width: 650px;
+}
+
+.sloganIcon {
+  width: 64px; height: 64px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.2), rgba(255,255,255,0.05));
+  border-radius: 16px;
+  display: flex; justify-content: center; align-items: center;
+  backdrop-filter: blur(10px);
+  margin-bottom: 30px;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+
+.sloganTitle {
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 24px;
+  line-height: 1.15;
+  letter-spacing: -1px;
+}
+
+.sloganDesc {
+  color: #cbd5e1;
+  font-size: 1.125rem;
+  margin-bottom: 48px;
+  line-height: 1.7;
+  max-width: 500px;
+}
+
+.testimonialCard {
+  background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 24px;
+  padding: 32px;
+  backdrop-filter: blur(20px);
+  max-width: 500px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 900px) {
+  .rightSide { display: none; }
+  .leftSide { flex: 1; min-width: 0; width: 100%; padding: 1rem; }
 }
 
 /* Decorative orbs */

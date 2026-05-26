@@ -1,5 +1,6 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import styles from "./layout.module.css";
@@ -7,6 +8,14 @@ import styles from "./layout.module.css";
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed]       = useState(false);
   const [mobileOpen, setMobileOpen]     = useState(false);
+  const router = useRouter();
+
+  useEffect(() => {
+    const stored = localStorage.getItem("currentUser");
+    if (!stored) {
+      router.push("/auth/login");
+    }
+  }, [router]);
 
   return (
     <div className={styles.shell}>
