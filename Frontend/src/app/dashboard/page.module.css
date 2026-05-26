@@ -1,0 +1,160 @@
+.mainGrid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .mainGrid { grid-template-columns: 1fr; }
+  .activityCol { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+}
+@media (max-width: 640px) {
+  .activityCol { grid-template-columns: 1fr; }
+}
+
+/* Event Cards */
+.eventCard {
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.eventCard::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--gradient-primary);
+  border-radius: 0 2px 2px 0;
+}
+.eventTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+.eventName {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.eventRound {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--color-text-2);
+  margin-bottom: 0.75rem;
+}
+.eventMeta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.eventMeta span {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.76rem;
+  color: var(--color-text-3);
+}
+
+/* Deadlines */
+.deadlineList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.deadlineItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid rgba(148,163,184,0.05);
+  transition: background var(--transition-fast);
+}
+.deadlineItem:last-child { border-bottom: none; }
+.deadlineItem:hover { background: rgba(99,102,241,0.04); }
+.deadlineDot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-3);
+  flex-shrink: 0;
+}
+.deadlineDot.urgent { background: var(--color-rose); animation: pulse 2s infinite; }
+.deadlineTask  { font-size: 0.83rem; font-weight: 600; color: var(--color-text); }
+.deadlineEvent { font-size: 0.75rem; color: var(--color-text-3); margin-top: 0.1rem; }
+
+/* Quick Actions */
+.quickActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.quickBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.9rem;
+  background: rgba(15,23,42,0.5);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+  color: var(--color-text-2);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+.quickBtn:hover {
+  background: rgba(var(--q-color), 0.1);
+  border-color: var(--q-color);
+  color: var(--color-text);
+  transform: translateY(-1px);
+}
+.quickIcon {
+  width: 30px; height: 30px;
+  border-radius: var(--radius-sm);
+  background: rgba(99,102,241,0.12);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--q-color);
+  flex-shrink: 0;
+}
+
+/* Activity Feed */
+.activityFeed {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.activityItem {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid rgba(148,163,184,0.05);
+}
+.activityItem:last-child { border-bottom: none; }
+.activityIcon {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+.activityBody { flex: 1; min-width: 0; }
+.activityText {
+  font-size: 0.8rem;
+  color: var(--color-text-2);
+  line-height: 1.4;
+  margin: 0;
+}
+.activityTime { font-size: 0.7rem; color: var(--color-text-3); display: block; margin-top: 0.2rem; }
