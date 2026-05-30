@@ -63,24 +63,29 @@ namespace SEAL.NET.Data
                 .HasForeignKey(s => s.SubmissionId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            builder.Entity<Score>()
+                .HasOne(s => s.Judge)
+                .WithMany(u => u.ScoresGiven)
+                .HasForeignKey(s => s.JudgeId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<JudgeAssignment>()
                 .HasOne(ja => ja.Judge)
-                .WithMany()
+                .WithMany(u => u.JudgeAssignments)
                 .HasForeignKey(ja => ja.JudgeId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<JudgeAssignment>()
-                .HasOne(ja => ja.Round)
-                .WithMany()
-                .HasForeignKey(ja => ja.RoundId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .HasOne(j => j.Round)
+                .WithMany(r => r.JudgeAssignments)
+                .HasForeignKey(j => j.RoundId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<JudgeAssignment>()
-                .HasOne(ja => ja.Category)
-                .WithMany()
-                .HasForeignKey(ja => ja.CategoryId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .HasOne(j => j.Category)
+                .WithMany(c => c.JudgeAssignments)
+                .HasForeignKey(j => j.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
 
             builder.Entity<Submission>()
                 .HasOne(s => s.Round)

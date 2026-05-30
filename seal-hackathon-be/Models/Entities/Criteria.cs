@@ -1,15 +1,19 @@
-﻿using System.ComponentModel.DataAnnotations.Schema;
+using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SEAL.NET.Models.Entities
 {
     public class Criteria
     {
         public Guid CriteriaId { get; set; } = Guid.NewGuid();
+
+        [MaxLength(100)]
         public string CriteriaName { get; set; } = string.Empty;
+
         public string? Description { get; set; }
 
         [Column(TypeName = "decimal(5,2)")]
-        public decimal Weight { get; set; }  
+        public decimal Weight { get; set; }
 
         [Column(TypeName = "decimal(5,2)")]
         public decimal MaxScore { get; set; }

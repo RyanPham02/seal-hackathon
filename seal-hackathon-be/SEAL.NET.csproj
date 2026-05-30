@@ -7,10 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Remove="appsettings.json" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="AutoMapper.Extensions.Microsoft.DependencyInjection" Version="12.0.1" />
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
@@ -29,10 +25,6 @@
   <ItemGroup>
     <Folder Include="Middleware\" />
     <Folder Include="Helpers\" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="appsettings.json" />
   </ItemGroup>
 
 </Project>
