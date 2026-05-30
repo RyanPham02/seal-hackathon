@@ -135,7 +135,8 @@ namespace SEAL.NET.Controllers
                 _context.TeamMembers.Add(new TeamMember
                 {
                     TeamId = team.TeamId,
-                    UserId = memberId
+                    UserId = memberId,
+                    Role = memberId == leaderId ? "Leader" : "Member"
                 });
             }
 
@@ -248,7 +249,8 @@ namespace SEAL.NET.Controllers
             _context.TeamMembers.Add(new TeamMember
             {
                 TeamId = team.TeamId,
-                UserId = request.UserId
+                UserId = request.UserId,
+                Role = "Member"
             });
 
             await _context.SaveChangesAsync();

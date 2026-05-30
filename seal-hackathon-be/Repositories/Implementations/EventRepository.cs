@@ -15,6 +15,7 @@ namespace SEAL.NET.Repositories.Implementations
         {
             return await _context.Events
                 .Include(e => e.Categories)
+                    .ThenInclude(c => c.Teams)
                 .Include(e => e.Rounds)
                 .OrderByDescending(e => e.CreatedAt)
                 .ToListAsync();
@@ -24,6 +25,7 @@ namespace SEAL.NET.Repositories.Implementations
         {
             return await _context.Events
                 .Include(e => e.Categories)
+                    .ThenInclude(c => c.Teams)
                 .Include(e => e.Rounds)
                 .FirstOrDefaultAsync(e => e.EventId == eventId);
         }

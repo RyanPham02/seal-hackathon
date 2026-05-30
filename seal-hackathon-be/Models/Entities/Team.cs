@@ -1,14 +1,21 @@
-﻿using SEAL.NET.Models.Enums;
+using SEAL.NET.Models.Enums;
+using System.ComponentModel.DataAnnotations;
 
 namespace SEAL.NET.Models.Entities
 {
     public class Team
     {
         public Guid TeamId { get; set; } = Guid.NewGuid();
+
+        [MaxLength(100)]
         public string TeamName { get; set; } = string.Empty;
+
         public TeamStatus Status { get; set; } = TeamStatus.Pending;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+        [MaxLength(500)]
         public string? EliminationReason { get; set; }
+
         public DateTime? EliminatedAt { get; set; }
 
         public Guid LeaderId { get; set; }
