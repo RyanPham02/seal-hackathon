@@ -186,6 +186,11 @@ a:hover { color: var(--color-primary); }
   background: rgba(255,255,255,0.05);
   color: var(--color-text);
 }
+.btn-ghost.danger:hover:not(:disabled) {
+  background: rgba(244,63,94,0.1);
+  color: var(--color-rose);
+  border-color: rgba(244,63,94,0.3);
+}
 
 .btn-danger {
   background: linear-gradient(135deg, #f43f5e, #e11d48);

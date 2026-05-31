@@ -65,10 +65,22 @@ export default function TeamsPage() {
 
   const handleKick = (email: string) => {
     if (!myTeam) return;
-    const updatedMembers = myTeam.members.filter((m:any) => m.email !== email);
-    const updatedTeam = { ...myTeam, members: updatedMembers };
-    saveTeam(updatedTeam);
-    message.success("Member removed from team.");
+    if (!isLeader) {
+      message.error("Chỉ có Leader mới được quyền kick thành viên!");
+      return;
+    }
+    modal.confirm({
+      title: "Xác nhận",
+      content: "Bạn có muốn kick người này hay không?",
+      okText: "Có",
+      cancelText: "Không",
+      onOk: () => {
+        const updatedMembers = myTeam.members.filter((m:any) => m.email !== email);
+        const updatedTeam = { ...myTeam, members: updatedMembers };
+        saveTeam(updatedTeam);
+        message.success("Đã kick thành viên khỏi nhóm.");
+      }
+    });
   };
 
   const handleLeave = () => {
@@ -133,9 +145,23 @@ export default function TeamsPage() {
     message.success("Đã từ chối thành viên.");
   };
 
-  const handleInvite = (target: string) => {
+  const handleInvite = (target: string, isMentor: boolean = false) => {
     if (myTeam.members.length >= 5) {
       message.error("Team is full (max 5 members).");
+      return;
+    }
+
+    if (isMentor) {
+      const hasMentor = myTeam.members.some((m: any) => m.role.includes("Mentor"));
+      if (hasMentor) {
+        message.error("Mỗi nhóm chỉ có thể kêu gọi 1 Mentor duy nhất!");
+        return;
+      }
+    }
+
+    const emailToAdd = target.includes('@') ? target : `${target.toLowerCase().replace(' ', '')}@example.com`;
+    if (myTeam.members.some((m: any) => m.email === emailToAdd)) {
+      message.error("Người dùng này đã có trong nhóm!");
       return;
     }
     
@@ -163,8 +189,8 @@ export default function TeamsPage() {
         const newMember = { 
           id: `USR-${Date.now()}`, 
           name: target.includes('@') ? target.split('@')[0] : target, 
-          email: target.includes('@') ? target : `${target.toLowerCase().replace(' ', '')}@example.com`, 
-          role: "Member", 
+          email: emailToAdd, 
+          role: isMentor ? "Mentor" : "Member", 
           status: isLeader ? "active" : "pending_approval",
           skills: [searchSkill || "General"] 
         };
@@ -185,6 +211,11 @@ export default function TeamsPage() {
   };
 
   const handleSOSMentor = () => {
+    const hasMentor = myTeam.members.some((m: any) => m.role.includes("Mentor"));
+    if (hasMentor) {
+      message.error("Mỗi nhóm chỉ có thể kêu gọi 1 Mentor duy nhất!");
+      return;
+    }
     message.loading({ content: "Broadcasting SOS to all available mentors...", key: "sos" });
     setTimeout(() => {
       const availableMentors = ["Dr. Pham", "Prof. Le", "Mr. Hoang", "Ms. Nguyen"];
@@ -409,7 +440,7 @@ export default function TeamsPage() {
                     <h4 style={{ margin: "0 0 0.25rem 0" }}>{m.name} <span className="badge badge-success">{m.match} Match</span></h4>
                     <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>Expertise: {m.expertise}</div>
                   </div>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleInvite(m.name)}><UserCheck size={14} /> Request Mentorship</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleInvite(m.name, true)}><UserCheck size={14} /> Request Mentorship</button>
                 </div>
               ))}
             </div>
