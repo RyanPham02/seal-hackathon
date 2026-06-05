@@ -298,7 +298,7 @@ namespace SEAL.NET.Controllers
                 return StatusCode(500, new { message = "Could not send OTP email. Please check Gmail SMTP credentials." });
             }
 
-            return Ok(new { message = "OTP has been sent to your email." });
+            return Ok(new { message = "If the email exists, an OTP has been sent." });
         }
 
         [HttpPost("reset-password")]
