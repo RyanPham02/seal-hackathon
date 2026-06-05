@@ -18,16 +18,43 @@ export type CurrentUser = {
   studentType?: string | null;
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { message: text };
+    }
+  }
 
   if (!response.ok) {
-    const message =
-      data?.message ??
-      data?.title ??
-      (Array.isArray(data) ? data.map((item) => item.description).join(", ") : "") ??
-      `Request failed with status ${response.status}`;
+    let message = `Request failed with status ${response.status}`;
+
+    if (Array.isArray(data)) {
+      const descriptions = data
+        .map((item) => (isRecord(item) && typeof item.description === "string" ? item.description : ""))
+        .filter(Boolean)
+        .join(", ");
+
+      if (descriptions) {
+        message = descriptions;
+      }
+    } else if (isRecord(data)) {
+      if (typeof data.message === "string") {
+        message = data.message;
+      } else if (typeof data.title === "string") {
+        message = data.title;
+      }
+    }
+
     throw new Error(message);
   }
 
