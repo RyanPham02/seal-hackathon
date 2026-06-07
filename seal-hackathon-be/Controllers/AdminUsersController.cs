@@ -151,6 +151,9 @@ namespace SEAL.NET.Controllers
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
 
+            // Invalidate the user's existing JWTs so the rejection takes effect immediately.
+            await _userManager.UpdateSecurityStampAsync(user);
+
             await _notificationService.CreateAsync(
                 user.Id,
                 "Account rejected",
@@ -194,6 +197,10 @@ namespace SEAL.NET.Controllers
 
             if (!addResult.Succeeded)
                 return BadRequest(addResult.Errors);
+
+            // Invalidate the user's existing JWTs so the new role takes effect immediately
+            // instead of lingering until the old token expires.
+            await _userManager.UpdateSecurityStampAsync(user);
 
             await _auditLogService.LogAsync(
                 GetActorUserId(),

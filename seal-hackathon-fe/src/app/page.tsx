@@ -62,7 +62,7 @@ export default function LandingPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await apiRequest<EventDto[]>("/Events", { auth: false });
+        const data = await apiRequest<EventDto[]>("/Events");
         setEvents(data);
       } catch {
         setEvents([]);

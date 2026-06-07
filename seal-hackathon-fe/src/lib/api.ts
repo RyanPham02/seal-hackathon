@@ -1,9 +1,10 @@
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://localhost:7266/api";
 
-type RequestOptions = RequestInit & {
-  auth?: boolean;
-};
+// Authentication is handled entirely via the HttpOnly cookie set by the backend,
+// which `credentials: "include"` (below) sends on every request. There is no
+// per-call auth toggle, so RequestOptions is just the standard fetch init.
+type RequestOptions = RequestInit;
 
 export type CurrentUser = {
   id: string;
@@ -169,8 +170,21 @@ export async function fetchCurrentUser() {
   }>("/Auth/me");
 
   const currentUser = toCurrentUser(user);
-  localStorage.setItem("currentUser", JSON.stringify(currentUser));
-  sessionStorage.removeItem("currentUser");
+  const serialized = JSON.stringify(currentUser);
+
+  // Refresh whichever storage the user is currently persisted in so we honour
+  // the original "remember me" choice. Never promote a sessionStorage-only
+  // login (remember = false) into localStorage.
+  if (localStorage.getItem("currentUser") !== null) {
+    localStorage.setItem("currentUser", serialized);
+  } else if (sessionStorage.getItem("currentUser") !== null) {
+    sessionStorage.setItem("currentUser", serialized);
+  } else {
+    // No prior client-side record (e.g. cookie-only session): default to the
+    // non-persistent store so we don't silently create a "remembered" login.
+    sessionStorage.setItem("currentUser", serialized);
+  }
+
   window.dispatchEvent(new Event("storage"));
 
   return currentUser;
@@ -182,7 +196,7 @@ export async function clearAuthSession() {
   window.dispatchEvent(new Event("storage"));
 
   try {
-    await apiRequest("/Auth/logout", { method: "POST", auth: false });
+    await apiRequest("/Auth/logout", { method: "POST" });
   } catch {
     // Local UI state is already cleared; logout may be unavailable on older backends.
   }

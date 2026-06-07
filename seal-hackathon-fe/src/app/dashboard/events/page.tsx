@@ -26,7 +26,7 @@ export default function UserEventsPage() {
   useEffect(() => {
     let active = true;
 
-    apiRequest<EventDto[]>("/Events", { auth: false })
+    apiRequest<EventDto[]>("/Events")
       .then((data) => {
         if (!active) return;
         setEvents(data);

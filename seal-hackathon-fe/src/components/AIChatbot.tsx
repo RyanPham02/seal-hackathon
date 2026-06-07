@@ -12,6 +12,16 @@ type MessageType = {
   action?: { label: string; path: string } | null;
 };
 
+// Renders **bold** markers as <strong> React nodes without injecting raw HTML.
+// Splitting on a capturing group yields alternating plain/bold segments
+// (odd indices are the captured bold text), so user-controlled text is always
+// rendered as escaped React children — never parsed as markup.
+function renderFormattedText(text: string): React.ReactNode[] {
+  return text.split(/\*\*(.*?)\*\*/g).map((part, index) =>
+    index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
+  );
+}
+
 const defaultMessages: MessageType[] = [
   {
     id: 1,
@@ -219,7 +229,7 @@ export default function AIChatbot() {
                     fontSize: 13,
                     lineHeight: 1.5,
                     whiteSpace: "pre-line",
-                  }} dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>") }} />
+                  }}>{renderFormattedText(msg.text)}</div>
 
                   {msg.action && (
                     <Button

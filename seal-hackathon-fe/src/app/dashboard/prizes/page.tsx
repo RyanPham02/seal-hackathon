@@ -30,7 +30,7 @@ export default function PrizesPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await apiRequest<PrizeDto[]>("/Prizes", { auth: false });
+        const data = await apiRequest<PrizeDto[]>("/Prizes");
         setPrizes(data);
       } catch (err) {
         message.error(err instanceof Error ? err.message : "Could not load prizes.");

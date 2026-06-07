@@ -8,6 +8,23 @@ import { ArrowRight, Code2, Eye, EyeOff, Lock, Mail, Trophy } from "lucide-react
 import { apiRequest, saveAuthSession } from "@/lib/api";
 import styles from "../auth.module.css";
 
+/**
+ * Returns a safe internal redirect target, or the role-based fallback when the
+ * requested redirect is missing or unsafe (external URL, protocol-relative,
+ * or otherwise malformed). This prevents open-redirect attacks via the
+ * `?redirect=` query param.
+ */
+function getSafeRedirect(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  // Must be an internal absolute path: starts with a single "/".
+  // Reject protocol-relative ("//host") and backslash ("/\\host") variants,
+  // and anything containing a scheme (e.g. "https:", "javascript:").
+  if (!value.startsWith("/")) return fallback;
+  if (value.startsWith("//") || value.startsWith("/\\")) return fallback;
+  if (value.includes(":")) return fallback;
+  return value;
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -21,16 +38,14 @@ function LoginForm() {
   useEffect(() => {
     const stored = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
     if (stored) {
-      if (redirectUrl) {
-        router.push(redirectUrl);
-        return;
-      }
+      let fallback = "/dashboard";
       try {
         const user = JSON.parse(stored);
-        router.push(user.roles?.includes("Admin") ? "/admin" : "/dashboard");
+        fallback = user.roles?.includes("Admin") ? "/admin" : "/dashboard";
       } catch {
-        router.push("/dashboard");
+        fallback = "/dashboard";
       }
+      router.push(getSafeRedirect(redirectUrl, fallback));
     }
   }, [router, redirectUrl]);
 
@@ -44,18 +59,14 @@ function LoginForm() {
         user: { id: string; fullName: string; email: string; roles: string[] };
       }>("/Auth/login", {
         method: "POST",
-        auth: false,
         body: JSON.stringify({ email: form.email, password: form.password }),
       });
 
       const currentUser = saveAuthSession(payload, form.remember);
       message.success("Logged in successfully!");
 
-      if (redirectUrl) {
-        router.push(redirectUrl);
-      } else {
-        router.push(currentUser.roles.includes("Admin") ? "/admin" : "/dashboard");
-      }
+      const fallback = currentUser.roles.includes("Admin") ? "/admin" : "/dashboard";
+      router.push(getSafeRedirect(redirectUrl, fallback));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Khong the dang nhap. Vui long thu lai.");
     } finally {

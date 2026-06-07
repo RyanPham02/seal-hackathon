@@ -37,7 +37,7 @@ export default function AdminTracksPage() {
 
     setLoading(true);
     try {
-      setTracks(await apiRequest<CategoryDto[]>(`/events/${selectedEventId}/categories`, { auth: false }));
+      setTracks(await apiRequest<CategoryDto[]>(`/events/${selectedEventId}/categories`));
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not load categories.");
     } finally {
@@ -48,7 +48,7 @@ export default function AdminTracksPage() {
   useEffect(() => {
     let active = true;
 
-    apiRequest<EventDto[]>("/Events", { auth: false })
+    apiRequest<EventDto[]>("/Events")
       .then((data) => {
         if (!active) return;
         setEvents(data);
@@ -73,7 +73,7 @@ export default function AdminTracksPage() {
 
     let active = true;
 
-    apiRequest<CategoryDto[]>(`/events/${eventId}/categories`, { auth: false })
+    apiRequest<CategoryDto[]>(`/events/${eventId}/categories`)
       .then((data) => {
         if (active) setTracks(data);
       })

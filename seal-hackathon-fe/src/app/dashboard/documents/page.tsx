@@ -44,7 +44,10 @@ export default function DocumentsPage() {
   }, [message]);
 
   useEffect(() => {
-    loadDocs();
+    // Defer the load out of the synchronous effect body (react-hooks/set-state-in-effect):
+    // loadDocs only sets state after an awaited fetch, and the microtask hop keeps that
+    // off the render-commit path without changing observable behavior.
+    void Promise.resolve().then(loadDocs);
   }, [loadDocs]);
 
   const handleUploadClick = () => fileInputRef.current?.click();

@@ -27,7 +27,7 @@ export default function UserTracksPage() {
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<EventDto[]>("/Events", { auth: false });
+      const data = await apiRequest<EventDto[]>("/Events");
       setEvents(data);
       setEventId((current) => current || data[0]?.eventId || "");
     } catch (err) {
@@ -48,7 +48,7 @@ export default function UserTracksPage() {
 
     let active = true;
     setLoading(true);
-    apiRequest<CategoryDto[]>(`/events/${eventId}/categories`, { auth: false })
+    apiRequest<CategoryDto[]>(`/events/${eventId}/categories`)
       .then((data) => {
         if (active) setTracks(data);
       })

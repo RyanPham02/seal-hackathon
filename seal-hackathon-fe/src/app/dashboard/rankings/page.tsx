@@ -52,7 +52,7 @@ export default function RankingsPage() {
   const loadEvents = async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<EventDto[]>("/Events", { auth: false });
+      const data = await apiRequest<EventDto[]>("/Events");
       setEvents(data);
       const firstEvent = data[0];
       if (!eventId) {
@@ -78,7 +78,7 @@ export default function RankingsPage() {
         categoryId === "all"
           ? `/ranking/round/${roundId}`
           : `/ranking/category/${categoryId}/round/${roundId}`;
-      setRankings(await apiRequest<RankingDto[]>(path, { auth: false }));
+      setRankings(await apiRequest<RankingDto[]>(path));
     } catch (err) {
       setRankings([]);
       message.error(err instanceof Error ? err.message : "Could not load rankings.");

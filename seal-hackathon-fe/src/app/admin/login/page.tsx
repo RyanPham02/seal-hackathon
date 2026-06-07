@@ -22,7 +22,6 @@ export default function AdminLogin() {
         user: { id: string; fullName: string; email: string; roles: string[] };
       }>("/Auth/login", {
         method: "POST",
-        auth: false,
         body: JSON.stringify({ email, password }),
       });
       const user = saveAuthSession(payload, true);

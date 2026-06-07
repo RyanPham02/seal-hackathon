@@ -113,31 +113,7 @@ namespace SEAL.NET.Controllers
             if (!user.IsApproved)
                 return Unauthorized(new { message = "Your account is disabled or not allowed to access." });
 
-            var userRoles = await _userManager.GetRolesAsync(user);
-
-            var authClaims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                    new Claim(ClaimTypes.Email, user.Email!),
-                    new Claim("FullName", user.FullName),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-                };
-
-            foreach (var role in userRoles)
-            {
-                authClaims.Add(new Claim(ClaimTypes.Role, role));
-            }
-
-            var token = GenerateNewJsonWebToken(authClaims);
-            var tokenValue = new JwtSecurityTokenHandler().WriteToken(token);
-
-            Response.Cookies.Append(AuthCookieName, tokenValue, new CookieOptions
-            {
-                HttpOnly = true,
-                Secure = true,
-                SameSite = GetCookieSameSite(),
-                Expires = token.ValidTo
-            });
+            var (token, userRoles) = await IssueAuthCookieAsync(user);
 
             return Ok(new
             {
@@ -158,7 +134,8 @@ namespace SEAL.NET.Controllers
             Response.Cookies.Delete(AuthCookieName, new CookieOptions
             {
                 Secure = true,
-                SameSite = GetCookieSameSite()
+                SameSite = GetCookieSameSite(),
+                Path = "/"
             });
 
             return Ok(new { message = "Logged out successfully." });
@@ -257,6 +234,11 @@ namespace SEAL.NET.Controllers
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
 
+            // ChangePasswordAsync rotates the SecurityStamp, which invalidates every existing
+            // token for this user. Re-issue this browser's auth cookie (with the new stamp) so
+            // the current session stays usable; the user's other sessions are now invalidated.
+            await IssueAuthCookieAsync(user);
+
             return Ok(new { message = "Password changed successfully." });
         }
 
@@ -337,6 +319,43 @@ namespace SEAL.NET.Controllers
             await ClearPasswordResetOtpAsync(user);
 
             return Ok(new { message = "Password reset successfully." });
+        }
+
+        // Mints a JWT (including the user's roles and current SecurityStamp) and writes it to the
+        // HttpOnly auth cookie, then returns the token and roles. Shared by login and the
+        // post-ChangePassword re-issue so both use identical claims and cookie options.
+        private async Task<(JwtSecurityToken token, IList<string> roles)> IssueAuthCookieAsync(ApplicationUser user)
+        {
+            var userRoles = await _userManager.GetRolesAsync(user);
+
+            var authClaims = new List<Claim>
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Email, user.Email!),
+                new Claim("FullName", user.FullName),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+                new Claim(_userManager.Options.ClaimsIdentity.SecurityStampClaimType,
+                    await _userManager.GetSecurityStampAsync(user))
+            };
+
+            foreach (var role in userRoles)
+            {
+                authClaims.Add(new Claim(ClaimTypes.Role, role));
+            }
+
+            var token = GenerateNewJsonWebToken(authClaims);
+            var tokenValue = new JwtSecurityTokenHandler().WriteToken(token);
+
+            Response.Cookies.Append(AuthCookieName, tokenValue, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = GetCookieSameSite(),
+                Path = "/",
+                Expires = token.ValidTo
+            });
+
+            return (token, userRoles);
         }
 
         private JwtSecurityToken GenerateNewJsonWebToken(List<Claim> authClaims)

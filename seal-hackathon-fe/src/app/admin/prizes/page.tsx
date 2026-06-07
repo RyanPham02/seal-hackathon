@@ -51,7 +51,7 @@ export default function AdminPrizesPage() {
 
     setLoading(true);
     try {
-      setPrizes(await apiRequest<PrizeDto[]>(`/Prizes?eventId=${selectedEventId}`, { auth: false }));
+      setPrizes(await apiRequest<PrizeDto[]>(`/Prizes?eventId=${selectedEventId}`));
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not load prizes.");
     } finally {
@@ -62,7 +62,7 @@ export default function AdminPrizesPage() {
   useEffect(() => {
     let active = true;
 
-    apiRequest<EventDto[]>("/Events", { auth: false })
+    apiRequest<EventDto[]>("/Events")
       .then((data) => {
         if (!active) return;
         setEvents(data);
@@ -85,7 +85,7 @@ export default function AdminPrizesPage() {
 
     let active = true;
 
-    apiRequest<PrizeDto[]>(`/Prizes?eventId=${eventId}`, { auth: false })
+    apiRequest<PrizeDto[]>(`/Prizes?eventId=${eventId}`)
       .then((data) => {
         if (active) setPrizes(data);
       })

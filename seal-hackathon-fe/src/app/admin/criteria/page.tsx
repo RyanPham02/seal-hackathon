@@ -38,14 +38,14 @@ export default function CriteriaPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const events = await apiRequest<EventDto[]>("/Events", { auth: false });
+        const events = await apiRequest<EventDto[]>("/Events");
         const built: CriteriaRow[] = [];
 
         await Promise.all(
           events.flatMap((event) =>
             (event.rounds ?? []).map(async (round) => {
               try {
-                const criteria = await apiRequest<CriteriaDto[]>(`/rounds/${round.roundId}/criteria`, { auth: false });
+                const criteria = await apiRequest<CriteriaDto[]>(`/rounds/${round.roundId}/criteria`);
                 if (criteria.length > 0) {
                   built.push({
                     key: round.roundId,

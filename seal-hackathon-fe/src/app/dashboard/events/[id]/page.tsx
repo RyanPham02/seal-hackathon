@@ -59,7 +59,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
   const [track, setTrack] = useState<string | undefined>(undefined);
 
   const fetchEvent = useCallback(() => (
-    apiRequest<EventDetailDto>(`/Events/${id}`, { auth: false })
+    apiRequest<EventDetailDto>(`/Events/${id}`)
   ), [id]);
 
   const loadEvent = useCallback(async () => {

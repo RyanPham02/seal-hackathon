@@ -79,7 +79,7 @@ export default function TeamsPage() {
     try {
       const [user, eventData] = await Promise.all([
         fetchCurrentUser(),
-        apiRequest<EventDto[]>("/Events", { auth: false }),
+        apiRequest<EventDto[]>("/Events"),
       ]);
 
       setCurrentUser(user);

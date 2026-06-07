@@ -101,7 +101,10 @@ export default function AdminEventsPage() {
 
   useEffect(() => {
     const active = { value: true };
-    void loadEventsData(active);
+    // Defer out of the synchronous effect body (react-hooks/set-state-in-effect):
+    // loadEventsData sets state only after an awaited fetch and respects the `active`
+    // guard, so the microtask hop keeps observable behavior identical.
+    void Promise.resolve().then(() => loadEventsData(active));
     return () => { active.value = false; };
   }, [loadEventsData]);
 

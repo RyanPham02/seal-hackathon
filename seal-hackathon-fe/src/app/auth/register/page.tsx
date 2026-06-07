@@ -30,9 +30,25 @@ export default function RegisterPage() {
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!studentType) {
+      message.error("Please select a student type.");
+      return;
+    }
+
     if (form.password !== form.confirmPassword) {
       message.error("Password confirmation does not match.");
       return;
+    }
+
+    if (studentType === "external") {
+      if (!form.university.trim()) {
+        message.error("Please select or enter your university.");
+        return;
+      }
+      if (form.university === "Other / International" && !form.customUniversity.trim()) {
+        message.error("Please specify your university name.");
+        return;
+      }
     }
 
     setStep("confirm");
@@ -53,7 +69,6 @@ export default function RegisterPage() {
 
       await apiRequest("/Auth/register", {
         method: "POST",
-        auth: false,
         body: JSON.stringify({
           fullName: form.fullName,
           email: form.email,

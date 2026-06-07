@@ -27,7 +27,6 @@ export default function ForgotPasswordPage() {
     try {
       await apiRequest("/Auth/forgot-password", {
         method: "POST",
-        auth: false,
         body: JSON.stringify({ email }),
       });
 
@@ -53,7 +52,6 @@ export default function ForgotPasswordPage() {
     try {
       await apiRequest("/Auth/reset-password", {
         method: "POST",
-        auth: false,
         body: JSON.stringify({ email, otp, newPassword }),
       });
 

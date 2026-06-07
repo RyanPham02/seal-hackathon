@@ -125,7 +125,7 @@ export default function DashboardPage() {
   useEffect(() => {
     const loadDashboard = async () => {
       try {
-        const data = await apiRequest<EventDto[]>("/Events", { auth: false });
+        const data = await apiRequest<EventDto[]>("/Events");
         const mappedEvents = data.map((event) => ({
           id: event.eventId,
           name: event.eventName,
