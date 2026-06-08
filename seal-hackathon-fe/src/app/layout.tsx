@@ -36,6 +36,9 @@ export default function RootLayout({
           <AIChatbotWrapper />
         </ThemeProvider>
         
+        {/* Google Translate container */}
+        <div id="google_translate_element" style={{ opacity: 0, position: "absolute", zIndex: -1, pointerEvents: "none" }} />
+
         {/* Google Translate scripts */}
         <Script id="google-translate-init" strategy="afterInteractive">
           {`

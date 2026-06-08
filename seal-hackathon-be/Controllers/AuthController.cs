@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,10 +9,9 @@ using SEAL.NET.Models.Enums;
 using SEAL.NET.Services.Interfaces;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Mail;
-using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
-using Microsoft.AspNetCore.Authorization;
 
 namespace SEAL.NET.Controllers
 {
@@ -20,6 +20,7 @@ namespace SEAL.NET.Controllers
     public class AuthController : ControllerBase
     {
         private const string AuthCookieName = "seal_token";
+
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole<Guid>> _roleManager;
         private readonly IConfiguration _configuration;
@@ -51,6 +52,7 @@ namespace SEAL.NET.Controllers
             if (!string.IsNullOrWhiteSpace(model.StudentCode))
             {
                 var studentCode = model.StudentCode.Trim();
+
                 var duplicateStudentCode = await _userManager.Users.AnyAsync(u =>
                     u.StudentCode != null &&
                     u.StudentCode.ToLower() == studentCode.ToLower());
@@ -60,7 +62,7 @@ namespace SEAL.NET.Controllers
             }
 
             if (model.StudentType == StudentType.External &&
-            string.IsNullOrWhiteSpace(model.SchoolName))
+                string.IsNullOrWhiteSpace(model.SchoolName))
             {
                 return BadRequest(new
                 {
@@ -186,10 +188,12 @@ namespace SEAL.NET.Controllers
             if (!string.IsNullOrWhiteSpace(request.StudentCode) &&
                 !string.Equals(user.StudentCode, request.StudentCode, StringComparison.OrdinalIgnoreCase))
             {
-                var duplicateStudentCode = _userManager.Users.Any(u =>
+                var studentCode = request.StudentCode.Trim();
+
+                var duplicateStudentCode = await _userManager.Users.AnyAsync(u =>
                     u.Id != user.Id &&
                     u.StudentCode != null &&
-                    u.StudentCode.ToLower() == request.StudentCode.ToLower());
+                    u.StudentCode.ToLower() == studentCode.ToLower());
 
                 if (duplicateStudentCode)
                     return BadRequest(new { message = "Student code is already used." });
@@ -235,8 +239,7 @@ namespace SEAL.NET.Controllers
                 return BadRequest(result.Errors);
 
             // ChangePasswordAsync rotates the SecurityStamp, which invalidates every existing
-            // token for this user. Re-issue this browser's auth cookie (with the new stamp) so
-            // the current session stays usable; the user's other sessions are now invalidated.
+            // token for this user. Re-issue this browser's auth cookie with the new stamp.
             await IssueAuthCookieAsync(user);
 
             return Ok(new { message = "Password changed successfully." });
@@ -321,9 +324,6 @@ namespace SEAL.NET.Controllers
             return Ok(new { message = "Password reset successfully." });
         }
 
-        // Mints a JWT (including the user's roles and current SecurityStamp) and writes it to the
-        // HttpOnly auth cookie, then returns the token and roles. Shared by login and the
-        // post-ChangePassword re-issue so both use identical claims and cookie options.
         private async Task<(JwtSecurityToken token, IList<string> roles)> IssueAuthCookieAsync(ApplicationUser user)
         {
             var userRoles = await _userManager.GetRolesAsync(user);
@@ -334,7 +334,8 @@ namespace SEAL.NET.Controllers
                 new Claim(ClaimTypes.Email, user.Email!),
                 new Claim("FullName", user.FullName),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim(_userManager.Options.ClaimsIdentity.SecurityStampClaimType,
+                new Claim(
+                    _userManager.Options.ClaimsIdentity.SecurityStampClaimType,
                     await _userManager.GetSecurityStampAsync(user))
             };
 
@@ -360,7 +361,8 @@ namespace SEAL.NET.Controllers
 
         private JwtSecurityToken GenerateNewJsonWebToken(List<Claim> authClaims)
         {
-            var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
+            var authSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
 
             var token = new JwtSecurityToken(
                 issuer: _configuration["Jwt:Issuer"],
@@ -376,6 +378,7 @@ namespace SEAL.NET.Controllers
         private SameSiteMode GetCookieSameSite()
         {
             var configured = _configuration["Auth:CookieSameSite"];
+
             return Enum.TryParse<SameSiteMode>(configured, ignoreCase: true, out var sameSite)
                 ? sameSite
                 : SameSiteMode.Lax;
@@ -386,13 +389,21 @@ namespace SEAL.NET.Controllers
             var secret = _configuration["Jwt:Key"] ?? string.Empty;
             var input = $"{email.Trim().ToUpperInvariant()}:{otp}:{secret}";
             var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+
             return Convert.ToHexString(bytes);
         }
 
         private async Task ClearPasswordResetOtpAsync(ApplicationUser user)
         {
-            await _userManager.RemoveAuthenticationTokenAsync(user, PasswordResetLoginProvider, PasswordResetOtpTokenName);
-            await _userManager.RemoveAuthenticationTokenAsync(user, PasswordResetLoginProvider, PasswordResetOtpExpiryName);
+            await _userManager.RemoveAuthenticationTokenAsync(
+                user,
+                PasswordResetLoginProvider,
+                PasswordResetOtpTokenName);
+
+            await _userManager.RemoveAuthenticationTokenAsync(
+                user,
+                PasswordResetLoginProvider,
+                PasswordResetOtpExpiryName);
         }
     }
 }

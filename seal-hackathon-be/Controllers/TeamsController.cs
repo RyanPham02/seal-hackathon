@@ -264,6 +264,12 @@ namespace SEAL.NET.Controllers
             if (team == null)
                 return NotFound(new { message = "You have not joined any team yet." });
 
+            var activeMentor = await _context.MentorAssignments
+                .Where(ma => ma.TeamId == team.TeamId && ma.IsActive)
+                .Include(ma => ma.Mentor)
+                .Select(ma => ma.Mentor)
+                .FirstOrDefaultAsync();
+
             return Ok(new
             {
                 team.TeamId,
@@ -287,7 +293,14 @@ namespace SEAL.NET.Controllers
                     m.User.Email,
                     m.User.StudentCode,
                     m.Role
-                })
+                }),
+                mentor = activeMentor == null ? null : new
+                {
+                    id = activeMentor.Id,
+                    fullName = activeMentor.FullName,
+                    email = activeMentor.Email,
+                    schoolName = activeMentor.SchoolName
+                }
             });
         }
 
@@ -592,6 +605,12 @@ namespace SEAL.NET.Controllers
             if (!isMember && !isAdminOrJudgeOrMentor)
                 return Forbid();
 
+            var activeMentor = await _context.MentorAssignments
+                .Where(ma => ma.TeamId == team.TeamId && ma.IsActive)
+                .Include(ma => ma.Mentor)
+                .Select(ma => ma.Mentor)
+                .FirstOrDefaultAsync();
+
             return Ok(new
             {
                 team.TeamId,
@@ -628,8 +647,138 @@ namespace SEAL.NET.Controllers
                     s.SlideUrl,
                     s.SubmittedAt,
                     roundName = s.Round!.RoundName
-                })
+                }),
+                mentor = activeMentor == null ? null : new
+                {
+                    id = activeMentor.Id,
+                    fullName = activeMentor.FullName,
+                    email = activeMentor.Email,
+                    schoolName = activeMentor.SchoolName
+                }
             });
+        }
+
+        [HttpGet("mentors")]
+        public async Task<IActionResult> GetMentors()
+        {
+            var mentorRole = await _context.Roles.FirstOrDefaultAsync(r => r.Name == "Mentor");
+            if (mentorRole == null)
+                return Ok(new List<object>());
+
+            var mentorUserIds = await _context.UserRoles
+                .Where(ur => ur.RoleId == mentorRole.Id)
+                .Select(ur => ur.UserId)
+                .ToListAsync();
+
+            var mentors = await _context.Users
+                .Where(u => mentorUserIds.Contains(u.Id) && u.IsApproved)
+                .Select(u => new
+                {
+                    id = u.Id,
+                    fullName = u.FullName,
+                    email = u.Email,
+                    schoolName = u.SchoolName
+                })
+                .ToListAsync();
+
+            return Ok(mentors);
+        }
+
+        [HttpPost("my-team/mentor")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> AssignMentorToMyTeam([FromBody] ChooseMentorRequest request)
+        {
+            var currentUserId = GetCurrentUserId();
+            var team = await GetCurrentUserTeamAsync(currentUserId);
+
+            if (team == null)
+                return NotFound(new { message = "You have not joined any team yet." });
+
+            if (team.LeaderId != currentUserId)
+                return Forbid();
+
+            if (team.Status != TeamStatus.Pending)
+                return BadRequest(new { message = "Cannot modify team after approval." });
+
+            var mentor = await _userManager.FindByIdAsync(request.MentorUserId.ToString());
+            if (mentor == null)
+                return NotFound(new { message = "Mentor user not found." });
+
+            if (!mentor.IsApproved)
+                return BadRequest(new { message = "This mentor's account is disabled." });
+
+            var isMentor = await _userManager.IsInRoleAsync(mentor, "Mentor");
+            if (!isMentor)
+                return BadRequest(new { message = "Selected user is not a mentor." });
+
+            // Deactivate any existing active mentor assignments for this team
+            var activeAssignments = await _context.MentorAssignments
+                .Where(ma => ma.TeamId == team.TeamId && ma.IsActive)
+                .ToListAsync();
+
+            foreach (var ma in activeAssignments)
+            {
+                ma.IsActive = false;
+            }
+
+            var assignment = new MentorAssignment
+            {
+                MentorUserId = request.MentorUserId,
+                TeamId = team.TeamId,
+                AssignedByUserId = currentUserId,
+                IsActive = true,
+                AssignedAt = DateTime.UtcNow
+            };
+
+            _context.MentorAssignments.Add(assignment);
+            await _context.SaveChangesAsync();
+
+            // Notify mentor
+            try
+            {
+                await _notificationService.CreateAsync(
+                    mentor.Id,
+                    "Mentor Assignment",
+                    $"You have been selected to mentor team {team.TeamName}.",
+                    "team"
+                );
+            }
+            catch { }
+
+            return Ok(new { message = "Mentor selected successfully." });
+        }
+
+        [HttpDelete("my-team/mentor")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> RemoveMentorFromMyTeam()
+        {
+            var currentUserId = GetCurrentUserId();
+            var team = await GetCurrentUserTeamAsync(currentUserId);
+
+            if (team == null)
+                return NotFound(new { message = "You have not joined any team yet." });
+
+            if (team.LeaderId != currentUserId)
+                return Forbid();
+
+            if (team.Status != TeamStatus.Pending)
+                return BadRequest(new { message = "Cannot modify team after approval." });
+
+            var activeAssignments = await _context.MentorAssignments
+                .Where(ma => ma.TeamId == team.TeamId && ma.IsActive)
+                .ToListAsync();
+
+            if (!activeAssignments.Any())
+                return BadRequest(new { message = "Your team does not have a mentor assigned." });
+
+            foreach (var ma in activeAssignments)
+            {
+                ma.IsActive = false;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Mentor removed successfully." });
         }
     }
 }

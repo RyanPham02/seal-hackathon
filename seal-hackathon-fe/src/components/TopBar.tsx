@@ -40,7 +40,26 @@ export default function TopBar({ onMenuToggle, sidebarCollapsed }: TopBarProps) 
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
   const changeLanguage = (langCode: string) => {
-    const select = document.querySelector(".goog-te-combo") as HTMLSelectElement | null;
+    let select = document.querySelector(".goog-te-combo") as HTMLSelectElement | null;
+    if (!select) {
+      const google = (window as any).google;
+      if (google?.translate?.TranslateElement) {
+        try {
+          new google.translate.TranslateElement({ pageLanguage: "en" }, "google_translate_element");
+          setTimeout(() => {
+            select = document.querySelector(".goog-te-combo") as HTMLSelectElement | null;
+            if (select) {
+              select.value = langCode;
+              select.dispatchEvent(new Event("change"));
+            }
+          }, 150);
+          return;
+        } catch (err) {
+          console.error("Dynamic translate init failed:", err);
+        }
+      }
+    }
+
     if (select) {
       select.value = langCode;
       select.dispatchEvent(new Event("change"));
@@ -91,6 +110,10 @@ export default function TopBar({ onMenuToggle, sidebarCollapsed }: TopBarProps) 
       void loadNotifications();
     }, 0);
 
+    const intervalId = setInterval(() => {
+      void loadNotifications();
+    }, 15000); // Poll every 15 seconds for notifications
+
     const handleStorageChange = () => {
       loadUser();
       void loadNotifications();
@@ -100,6 +123,7 @@ export default function TopBar({ onMenuToggle, sidebarCollapsed }: TopBarProps) 
 
     return () => {
       window.clearTimeout(id);
+      clearInterval(intervalId);
       document.removeEventListener("mousedown", handleClickOutside);
       window.removeEventListener("storage", handleStorageChange);
     };
@@ -186,8 +210,6 @@ export default function TopBar({ onMenuToggle, sidebarCollapsed }: TopBarProps) 
       </div>
 
       <div className={styles.right}>
-        <div id="google_translate_element" style={{ opacity: 0, position: "absolute", zIndex: -1, pointerEvents: "none" }} />
-
         <Dropdown menu={{ items: languageItems, style: { maxHeight: 400, overflowY: "auto" } }} placement="bottomRight" trigger={["click"]}>
           <button className={styles.iconBtn} title="Change language">
             <Languages size={18} />
@@ -201,7 +223,14 @@ export default function TopBar({ onMenuToggle, sidebarCollapsed }: TopBarProps) 
         <div className="dropdown" ref={notifRef}>
           <button
             className={styles.iconBtn}
-            onClick={() => { setNotifOpen(!notifOpen); setUserOpen(false); }}
+            onClick={() => {
+              const newOpen = !notifOpen;
+              setNotifOpen(newOpen);
+              setUserOpen(false);
+              if (newOpen) {
+                void loadNotifications();
+              }
+            }}
             style={{ position: "relative" }}
           >
             <Bell size={18} />

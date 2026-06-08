@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState, useEffect } from "react";
 import { Send, Bell, List, RefreshCw, Users } from "lucide-react";
 import { App } from "antd";
@@ -64,6 +64,7 @@ export default function AdminSystemNotifications() {
       setTitle("");
       setDesc("");
       setNotifType("info");
+      window.dispatchEvent(new Event("storage"));
       await loadHistory();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Failed to send broadcast.");

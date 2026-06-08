@@ -1,8 +1,9 @@
-﻿"use client";
+"use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Users, Shield, UserPlus, Trash2, RefreshCw, AlertCircle, Crown, ArrowRightLeft } from "lucide-react";
-import { App } from "antd";
+import { Plus, Users, Shield, UserPlus, Trash2, RefreshCw, AlertCircle, Crown, ArrowRightLeft, GraduationCap } from "lucide-react";
+import { App, Modal } from "antd";
+import { useRouter } from "next/navigation";
 import { CurrentUser, apiRequest, fetchCurrentUser } from "@/lib/api";
 
 type TeamMember = {
@@ -27,6 +28,12 @@ type TeamDto = {
     roundName: string;
   } | null;
   members: TeamMember[];
+  mentor?: {
+    id: string;
+    fullName: string;
+    email: string;
+    schoolName?: string | null;
+  } | null;
 };
 
 type EventDto = {
@@ -48,6 +55,7 @@ function parseMemberIds(value: string) {
 
 export default function TeamsPage() {
   const { message, modal } = App.useApp();
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [myTeam, setMyTeam] = useState<TeamDto | null>(null);
   const [events, setEvents] = useState<EventDto[]>([]);
@@ -59,6 +67,11 @@ export default function TeamsPage() {
   const [memberCodeToAdd, setMemberCodeToAdd] = useState("");
   const [draftTeamName, setDraftTeamName] = useState("");
   const [newLeaderCodeOrEmail, setNewLeaderCodeOrEmail] = useState("");
+
+  // Mentor Selection states
+  const [mentors, setMentors] = useState<{ id: string; fullName: string; email: string; schoolName?: string | null }[]>([]);
+  const [showMentorModal, setShowMentorModal] = useState(false);
+  const [loadingMentors, setLoadingMentors] = useState(false);
 
   const categories = useMemo(
     () =>
@@ -245,6 +258,53 @@ export default function TeamsPage() {
     }
   };
 
+  const loadMentors = async () => {
+    setLoadingMentors(true);
+    try {
+      const data = await apiRequest<{ id: string; fullName: string; email: string; schoolName?: string | null }[]>("/teams/mentors");
+      setMentors(data);
+    } catch {
+      message.error("Could not load mentors list.");
+    } finally {
+      setLoadingMentors(false);
+    }
+  };
+
+  const handleAssignMentor = async (mentorId: string) => {
+    setSubmitting(true);
+    try {
+      await apiRequest("/teams/my-team/mentor", {
+        method: "POST",
+        body: JSON.stringify({ mentorUserId: mentorId }),
+      });
+      message.success("Mentor assigned successfully.");
+      setShowMentorModal(false);
+      await loadPage();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not assign mentor.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemoveMentor = () => {
+    modal.confirm({
+      title: "Remove mentor",
+      content: "Are you sure you want to remove the mentor from your team?",
+      okText: "Remove",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiRequest("/teams/my-team/mentor", { method: "DELETE" });
+          message.success("Mentor removed successfully.");
+          await loadPage();
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : "Could not remove mentor.");
+        }
+      },
+    });
+  };
+
   if (loading) {
     return (
       <div className="empty-state">
@@ -330,12 +390,17 @@ export default function TeamsPage() {
             {myTeam.currentRound ? ` · ${myTeam.currentRound.roundName}` : ""}
           </p>
         </div>
-        <button className="btn btn-secondary" onClick={loadPage} disabled={loading || submitting}>
-          <RefreshCw size={16} /> Refresh
-        </button>
-        <button className="btn btn-ghost danger" onClick={handleLeaveTeam} disabled={submitting}>
-          Leave Team
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <button className="btn btn-secondary" onClick={() => router.push("/dashboard/matchmaking")}>
+            <Users size={16} style={{ marginRight: 4 }} /> Matchmaking
+          </button>
+          <button className="btn btn-secondary" onClick={loadPage} disabled={loading || submitting}>
+            <RefreshCw size={16} /> Refresh
+          </button>
+          <button className="btn btn-ghost danger" onClick={handleLeaveTeam} disabled={submitting}>
+            Leave Team
+          </button>
+        </div>
       </div>
 
       {canModifyMembers && (
@@ -448,8 +513,58 @@ export default function TeamsPage() {
         </div>
       </div>
 
+      {/* Team Mentor Section */}
+      <div className="glass-card" style={{ marginBottom: "2rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+          <h3 style={{ fontSize: "1.2rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <GraduationCap size={18} style={{ color: "var(--color-primary)" }} />
+            Team Mentor
+          </h3>
+        </div>
+
+        {myTeam.mentor ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+              <div className="avatar-placeholder" style={{ width: 40, height: 40, fontSize: "1rem", background: "rgba(99,102,241,0.1)", color: "var(--color-primary)" }}>
+                {myTeam.mentor.fullName.charAt(0)}
+              </div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: "1.05rem" }}>{myTeam.mentor.fullName}</div>
+                <div style={{ fontSize: "0.85rem", color: "var(--color-text-3)" }}>{myTeam.mentor.email}</div>
+                {myTeam.mentor.schoolName && (
+                  <div style={{ fontSize: "0.82rem", color: "var(--color-text-2)", marginTop: "0.2rem" }}>
+                    {myTeam.mentor.schoolName}
+                  </div>
+                )}
+              </div>
+            </div>
+            {isLeader && myTeam.status === "Pending" && (
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => { loadMentors(); setShowMentorModal(true); }}>
+                  Change Mentor
+                </button>
+                <button className="btn btn-ghost danger btn-sm" onClick={handleRemoveMentor}>
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.5rem 0" }}>
+            <div style={{ color: "var(--color-text-3)", fontSize: "0.9rem" }}>
+              No mentor selected yet.
+            </div>
+            {isLeader && myTeam.status === "Pending" && (
+              <button className="btn btn-primary btn-sm" onClick={() => { loadMentors(); setShowMentorModal(true); }}>
+                Choose Mentor
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
       {canModifyMembers && (
-        <div className="glass-card" style={{ maxWidth: 520 }}>
+        <div className="glass-card" style={{ maxWidth: 520, marginBottom: "2rem" }}>
           <h3 style={{ fontSize: "1rem", marginBottom: "0.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <UserPlus size={18} /> Add Member
           </h3>
@@ -470,6 +585,67 @@ export default function TeamsPage() {
           </div>
         </div>
       )}
+
+      <Modal
+        title="Select Team Mentor"
+        open={showMentorModal}
+        onCancel={() => setShowMentorModal(false)}
+        footer={null}
+        width={550}
+        centered
+        styles={{
+          body: {
+            maxHeight: "400px",
+            overflowY: "auto",
+            paddingTop: "1rem"
+          }
+        }}
+      >
+        {loadingMentors ? (
+          <div style={{ textAlign: "center", padding: "2rem" }}>
+            <span className="spinner" />
+            <div style={{ marginTop: "0.5rem", color: "var(--color-text-3)" }}>Loading mentors...</div>
+          </div>
+        ) : mentors.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-3)" }}>
+            No approved mentors found in the system.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {mentors.map((mentor) => (
+              <div
+                key={mentor.id}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  padding: "1rem",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)"
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 600, color: "var(--color-text-1)" }}>{mentor.fullName}</div>
+                  <div style={{ fontSize: "0.85rem", color: "var(--color-text-3)" }}>{mentor.email}</div>
+                  {mentor.schoolName && (
+                    <div style={{ fontSize: "0.8rem", color: "var(--color-text-2)", marginTop: "0.2rem" }}>
+                      {mentor.schoolName}
+                    </div>
+                  )}
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  disabled={submitting}
+                  onClick={() => handleAssignMentor(mentor.id)}
+                >
+                  Select
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

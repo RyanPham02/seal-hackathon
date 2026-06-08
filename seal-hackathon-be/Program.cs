@@ -14,8 +14,11 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? builder.Configuration["DATABASE_URL"]
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' or 'DATABASE_URL' not found.");
+
 
 // Refuse to start in Production with a missing, too-short, or placeholder JWT signing key.
 // A weak/known key would let anyone forge authentication tokens. Development is left
@@ -32,7 +35,7 @@ if (builder.Environment.IsProduction() &&
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseNpgsql(connectionString));
 
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>

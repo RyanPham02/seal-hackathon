@@ -245,17 +245,18 @@ namespace SEAL.NET.Controllers
             if (existing != null)
                 return BadRequest(new { message = "Email is already in use." });
 
+            var tempPassword = "Judge@" + Guid.NewGuid().ToString("N").Substring(0, 8) + "1!";
+
             var user = new ApplicationUser
             {
                 UserName = request.Email,
                 Email = request.Email,
                 FullName = request.Name,
                 SchoolName = request.Company,
+                PlainPassword = tempPassword,
                 IsApproved = true,
                 CreatedAt = DateTime.UtcNow
             };
-
-            var tempPassword = "Judge@" + Guid.NewGuid().ToString("N").Substring(0, 8) + "1!";
 
             var result = await _userManager.CreateAsync(user, tempPassword);
             if (!result.Succeeded)

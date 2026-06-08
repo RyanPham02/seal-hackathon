@@ -8,6 +8,11 @@ namespace SEAL.NET.DTOs.Team
         public Guid TeamId { get; set; }
     }
 
+    public class ChooseMentorRequest
+    {
+        public Guid MentorUserId { get; set; }
+    }
+
     public class MentorAssignmentResponseDto
     {
         public Guid Id { get; set; }

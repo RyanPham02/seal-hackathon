@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SEAL.NET.Models.Entities;
 
 namespace SEAL.NET.Data
@@ -31,11 +32,36 @@ namespace SEAL.NET.Data
         {
             base.OnModelCreating(builder);
 
+            var dateTimeConverter = new ValueConverter<DateTime, DateTime>(
+                value => DateTime.SpecifyKind(value, DateTimeKind.Unspecified),
+                value => value);
+
+            var nullableDateTimeConverter = new ValueConverter<DateTime?, DateTime?>(
+                value => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified) : value,
+                value => value);
+
+            foreach (var entityType in builder.Model.GetEntityTypes())
+            {
+                foreach (var property in entityType.GetProperties())
+                {
+                    if (property.ClrType == typeof(DateTime))
+                    {
+                        property.SetColumnType("timestamp without time zone");
+                        property.SetValueConverter(dateTimeConverter);
+                    }
+                    else if (property.ClrType == typeof(DateTime?))
+                    {
+                        property.SetColumnType("timestamp without time zone");
+                        property.SetValueConverter(nullableDateTimeConverter);
+                    }
+                }
+            }
+
             builder.Entity<ApplicationUser>().ToTable("Users");
             builder.Entity<ApplicationUser>()
                 .HasIndex(u => u.StudentCode)
                 .IsUnique()
-                .HasFilter("[StudentCode] IS NOT NULL");
+                .HasFilter("\"StudentCode\" IS NOT NULL");
 
             builder.Entity<IdentityRole<Guid>>().ToTable("Roles");
             builder.Entity<IdentityUserRole<Guid>>().ToTable("UserRoles");
@@ -143,7 +169,7 @@ namespace SEAL.NET.Data
             builder.Entity<TeamInvitation>()
                 .HasIndex(ti => new { ti.TeamId, ti.InviteeUserId })
                 .IsUnique()
-                .HasFilter("[Status] = 0");
+                .HasFilter("\"Status\" = 0");
 
             builder.Entity<TeamInvitation>()
                 .HasOne(ti => ti.Team)
@@ -166,7 +192,7 @@ namespace SEAL.NET.Data
             builder.Entity<MentorAssignment>()
                 .HasIndex(ma => new { ma.MentorUserId, ma.TeamId })
                 .IsUnique()
-                .HasFilter("[IsActive] = 1");
+                .HasFilter("\"IsActive\" = TRUE");
 
             builder.Entity<MentorAssignment>()
                 .HasOne(ma => ma.Mentor)
