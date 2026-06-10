@@ -583,9 +583,9 @@ a:hover { color: var(--color-primary); }
 
 /* Custom Antd Table styling for Glassmorphism */
 .custom-antd-table .ant-table { background: transparent !important; color: var(--color-text-1) !important; }
-.custom-antd-table .ant-table-thead > tr > th { background: rgba(15, 23, 42, 0.4) !important; color: var(--color-text-3) !important; border-bottom: 1px solid var(--color-border-1) !important; }
+.custom-antd-table .ant-table-thead > tr > th { background: var(--color-surface-2) !important; color: var(--color-text-3) !important; border-bottom: 1px solid var(--color-border-1) !important; }
 .custom-antd-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--color-border-1) !important; transition: background 0.2s; }
-.custom-antd-table .ant-table-tbody > tr:hover > td { background: rgba(255, 255, 255, 0.05) !important; }
+.custom-antd-table .ant-table-tbody > tr:hover > td { background: var(--color-bg-2) !important; }
 .custom-antd-table .ant-pagination-item a { color: var(--color-text-2) !important; }
 .custom-antd-table .ant-pagination-item-active { background: var(--color-primary) !important; border-color: var(--color-primary) !important; }
 .custom-antd-table .ant-pagination-item-active a { color: #fff !important; }
