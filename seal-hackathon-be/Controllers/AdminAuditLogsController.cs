@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SEAL.NET.Data;
+using SEAL.NET.Services.Common;
+using SEAL.NET.Services.Interfaces;
 
 namespace SEAL.NET.Controllers
 {
@@ -10,35 +10,15 @@ namespace SEAL.NET.Controllers
     [Authorize(Roles = "Admin")]
     public class AdminAuditLogsController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IAuditLogQueryService _auditLogQueryService;
 
-        public AdminAuditLogsController(ApplicationDbContext context)
+        public AdminAuditLogsController(IAuditLogQueryService auditLogQueryService)
         {
-            _context = context;
+            _auditLogQueryService = auditLogQueryService;
         }
 
         [HttpGet]
         public async Task<IActionResult> GetAuditLogs()
-        {
-            var logs = await _context.AuditLogs
-                .Include(log => log.ActorUser)
-                .OrderByDescending(log => log.CreatedAt)
-                .Take(200)
-                .Select(log => new
-                {
-                    log.Id,
-                    log.ActorUserId,
-                    actorName = log.ActorUser == null ? null : log.ActorUser.FullName,
-                    actorEmail = log.ActorUser == null ? null : log.ActorUser.Email,
-                    log.Action,
-                    log.EntityType,
-                    log.EntityId,
-                    log.Description,
-                    log.CreatedAt
-                })
-                .ToListAsync();
-
-            return Ok(logs);
-        }
+            => this.ToActionResult(await _auditLogQueryService.GetAuditLogsAsync());
     }
 }

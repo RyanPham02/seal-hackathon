@@ -1,7 +1,6 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SEAL.NET.Data;
+using SEAL.NET.Services.Interfaces;
 
 namespace SEAL.NET.Controllers
 {
@@ -10,90 +9,21 @@ namespace SEAL.NET.Controllers
     [Authorize]
     public class RankingController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IRankingService _rankingService;
 
-        public RankingController(ApplicationDbContext context)
+        public RankingController(IRankingService rankingService)
         {
-            _context = context;
+            _rankingService = rankingService;
         }
 
         [HttpGet("round/{roundId}")]
         [AllowAnonymous]
         public async Task<IActionResult> GetRoundRanking(Guid roundId)
-        {
-            var ranking = await _context.Submissions
-                .Include(s => s.Team)
-                    .ThenInclude(t => t.Category)
-                .Include(s => s.Scores)
-                    .ThenInclude(sc => sc.Criteria)
-                .Where(s => s.RoundId == roundId)
-                .Select(s => new
-                {
-                    s.SubmissionId,
-                    teamId = s.Team!.TeamId,
-                    teamName = s.Team.TeamName,
-                    categoryName = s.Team.Category!.CategoryName,
-                    totalScore = s.Scores.Sum(sc =>
-                        sc.Criteria == null || sc.Criteria.MaxScore == 0
-                            ? 0
-                            : (sc.ScoreValue / sc.Criteria.MaxScore) * sc.Criteria.Weight),
-                    submittedAt = s.SubmittedAt
-                })
-                .OrderByDescending(x => x.totalScore)
-                .ThenBy(x => x.submittedAt)
-                .ToListAsync();
-
-            var result = ranking.Select((r, index) => new
-            {
-                rank = index + 1,
-                r.SubmissionId,
-                r.teamId,
-                r.teamName,
-                r.categoryName,
-                r.totalScore,
-                r.submittedAt
-            });
-
-            return Ok(result);
-        }
+            => Ok(await _rankingService.GetRoundRankingAsync(roundId));
 
         [HttpGet("category/{categoryId}/round/{roundId}")]
         [AllowAnonymous]
         public async Task<IActionResult> GetCategoryRoundRanking(Guid categoryId, Guid roundId)
-        {
-            var ranking = await _context.Submissions
-                .Include(s => s.Team)
-                .Include(s => s.Scores)
-                    .ThenInclude(sc => sc.Criteria)
-                .Where(s =>
-                    s.RoundId == roundId &&
-                    s.Team!.CategoryId == categoryId)
-                .Select(s => new
-                {
-                    s.SubmissionId,
-                    teamId = s.Team!.TeamId,
-                    teamName = s.Team.TeamName,
-                    totalScore = s.Scores.Sum(sc =>
-                        sc.Criteria == null || sc.Criteria.MaxScore == 0
-                            ? 0
-                            : (sc.ScoreValue / sc.Criteria.MaxScore) * sc.Criteria.Weight),
-                    submittedAt = s.SubmittedAt
-                })
-                .OrderByDescending(x => x.totalScore)
-                .ThenBy(x => x.submittedAt)
-                .ToListAsync();
-
-            var result = ranking.Select((r, index) => new
-            {
-                rank = index + 1,
-                r.SubmissionId,
-                r.teamId,
-                r.teamName,
-                r.totalScore,
-                r.submittedAt
-            });
-
-            return Ok(result);
-        }
+            => Ok(await _rankingService.GetCategoryRoundRankingAsync(categoryId, roundId));
     }
 }

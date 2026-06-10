@@ -20,9 +20,6 @@ var connectionString =
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' or 'DATABASE_URL' not found.");
 
 
-// Refuse to start in Production with a missing, too-short, or placeholder JWT signing key.
-// A weak/known key would let anyone forge authentication tokens. Development is left
-// untouched so the local placeholder key continues to work.
 var jwtKey = builder.Configuration["Jwt:Key"];
 if (builder.Environment.IsProduction() &&
     (string.IsNullOrWhiteSpace(jwtKey) ||
@@ -40,9 +37,6 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
 {
-    // Make the brute-force lockout policy explicit. AuthController already drives lockout via
-    // IsLockedOutAsync/AccessFailedAsync/ResetAccessFailedCountAsync; this only pins the
-    // thresholds (5 failed attempts -> 15 minute lockout) instead of relying on framework defaults.
     options.Lockout.AllowedForNewUsers = true;
     options.Lockout.MaxFailedAccessAttempts = 5;
     options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
@@ -57,6 +51,26 @@ builder.Services.AddScoped<IEventRepository, EventRepository>();
 
 
 builder.Services.AddScoped<IEventService, EventService>();
+builder.Services.AddScoped<ITeamService, TeamService>();
+builder.Services.AddScoped<IScoreService, ScoreService>();
+builder.Services.AddScoped<IRankingService, RankingService>();
+builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<ICriteriaService, CriteriaService>();
+builder.Services.AddScoped<IRoundService, RoundService>();
+builder.Services.AddScoped<IPrizeService, PrizeService>();
+builder.Services.AddScoped<IJudgeAssignmentService, JudgeAssignmentService>();
+builder.Services.AddScoped<INotificationInboxService, NotificationInboxService>();
+builder.Services.AddScoped<IAuditLogQueryService, AuditLogQueryService>();
+builder.Services.AddScoped<IMentorService, MentorService>();
+builder.Services.AddScoped<IMentorAdminService, MentorAdminService>();
+builder.Services.AddScoped<IDocumentService, DocumentService>();
+builder.Services.AddScoped<ISubmissionService, SubmissionService>();
+builder.Services.AddScoped<IMatchmakingService, MatchmakingService>();
+builder.Services.AddScoped<IAdminUserService, AdminUserService>();
+builder.Services.AddScoped<IAdminTeamService, AdminTeamService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAuditLogService, AuditLogService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
@@ -82,11 +96,6 @@ builder.Services.AddAuthentication(options =>
             return Task.CompletedTask;
         },
 
-        // Session invalidation: a valid signature is not enough. On every authenticated
-        // request we re-check the user against the store and fail closed if the user is
-        // gone, unapproved, or the token's SecurityStamp no longer matches the current one
-        // (rotated on role change, reject, or password change). Tokens issued before this
-        // feature lack the stamp claim and are also rejected, forcing a one-time re-login.
         OnTokenValidated = async context =>
         {
             var userManager = context.HttpContext.RequestServices
@@ -161,8 +170,6 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    // Document that authentication is carried by the HttpOnly seal_token cookie set at login,
-    // so Swagger UI reflects the real auth scheme. Doc-only; no runtime behavior change.
     options.AddSecurityDefinition("CookieAuth", new OpenApiSecurityScheme
     {
         Name = "seal_token",
@@ -204,8 +211,6 @@ app.Use(async (context, next) =>
         logger.LogError(ex, "Unhandled exception while processing {Method} {Path} (traceId: {TraceId})",
             context.Request.Method, context.Request.Path, traceId);
 
-        // If the response has already begun streaming we cannot rewrite it; rethrow so the
-        // server terminates the response rather than corrupting it.
         if (context.Response.HasStarted)
             throw;
 
@@ -228,7 +233,6 @@ using (var scope = app.Services.CreateScope())
     if (app.Environment.IsDevelopment())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        // await db.Database.MigrateAsync(); // Commented out to prevent conflict with existing database
     }
 
     await DbSeeder.SeedRolesAndAdminAsync(scope.ServiceProvider);
@@ -244,14 +248,11 @@ app.UseHttpsRedirection();
 
 app.UseCors("AllowFrontend");
 
-// CSRF protection: validate Origin/Referer on unsafe /api methods against the configured
-// allowed origins. Runs after CORS (so preflight is already handled) and before auth.
 app.UseMiddleware<SEAL.NET.Middleware.CsrfOriginValidationMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Lightweight liveness/readiness probe. Reports DB connectivity only; no sensitive data exposed.
 app.MapGet("/health", async (ApplicationDbContext dbContext, ILoggerFactory loggerFactory) =>
 {
     var logger = loggerFactory.CreateLogger("HealthCheck");
