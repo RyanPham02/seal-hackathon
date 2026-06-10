@@ -123,7 +123,7 @@
 }
 
 .cardIconWrapper {
-  background: rgba(30, 41, 59, 0.5);
+  background: var(--color-surface-2);
   padding: 0.5rem;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border-2);
@@ -148,7 +148,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
-  background: rgba(15, 23, 42, 0.4);
+  background: var(--color-surface-2);
   padding: 1.2rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-2);
