@@ -28,6 +28,8 @@
   --color-text:        #f1f5f9;
   --color-text-2:      #94a3b8;
   --color-text-3:      #64748b;
+  
+  --bg-grid-color:     rgba(255, 255, 255, 0.02);
 
   /* Shadows */
   --shadow-sm:   0 2px 8px rgba(0,0,0,0.3);
@@ -73,6 +75,8 @@
   --color-text:        #0f172a;
   --color-text-2:      #475569;
   --color-text-3:      #64748b;
+  
+  --bg-grid-color:     rgba(0, 0, 0, 0.05);
 
   --shadow-sm:   0 2px 8px rgba(0,0,0,0.05);
   --shadow-md:   0 8px 24px rgba(0,0,0,0.08);
@@ -93,8 +97,8 @@ body {
   background-image: 
     radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 40%),
     radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(var(--bg-grid-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bg-grid-color) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
   background-position: 0 0, 0 0, -1px -1px, -1px -1px;
   color: var(--color-text);
