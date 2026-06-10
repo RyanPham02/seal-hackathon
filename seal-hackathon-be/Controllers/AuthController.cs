@@ -97,19 +97,30 @@ namespace SEAL.NET.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest model)
         {
-            var user = await _userManager.FindByEmailAsync(model.Email);
+            var users = await _userManager.Users
+                .Where(u => u.Email == model.Email)
+                .OrderByDescending(u => u.CreatedAt)
+                .ToListAsync();
+
+            if (!users.Any())
+                return Unauthorized(new { message = "Email or password is incorrect." });
+
+            ApplicationUser? user = null;
+            foreach (var u in users)
+            {
+                if (await _userManager.CheckPasswordAsync(u, model.Password))
+                {
+                    user = u;
+                    break;
+                }
+                await _userManager.AccessFailedAsync(u);
+            }
 
             if (user == null)
                 return Unauthorized(new { message = "Email or password is incorrect." });
 
             if (await _userManager.IsLockedOutAsync(user))
                 return Unauthorized(new { message = "Your account is temporarily locked due to too many failed attempts. Please try again later." });
-
-            if (!await _userManager.CheckPasswordAsync(user, model.Password))
-            {
-                await _userManager.AccessFailedAsync(user);
-                return Unauthorized(new { message = "Email or password is incorrect." });
-            }
 
             await _userManager.ResetAccessFailedCountAsync(user);
 

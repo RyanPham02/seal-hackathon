@@ -54,6 +54,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
   const [event, setEvent] = useState<EventDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [regVisible, setRegVisible] = useState(false);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [track, setTrack] = useState<string | undefined>(undefined);
@@ -67,6 +68,14 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     try {
       const data = await fetchEvent();
       setEvent(data);
+      try {
+        const myTeam = await apiRequest<{teamId: string}>("/Teams/my-team");
+        if (myTeam && myTeam.teamId) {
+          setIsRegistered(true);
+        }
+      } catch (teamErr) {
+        // User not in team
+      }
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not load event.");
       setEvent(null);
@@ -79,9 +88,17 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     let active = true;
 
     fetchEvent()
-      .then((data) => {
+      .then(async (data) => {
         if (active) {
           setEvent(data);
+          try {
+            const myTeam = await apiRequest<{teamId: string}>("/Teams/my-team");
+            if (myTeam && myTeam.teamId) {
+              setIsRegistered(true);
+            }
+          } catch (teamErr) {
+            // User not in team
+          }
         }
       })
       .catch((err) => {
@@ -149,9 +166,16 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           </div>
           <p className="page-subtitle">{event.description || "No description provided."}</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setRegVisible(true)} disabled={event.categories.length === 0}>
-          <Users size={15} /> Register Now
-        </button>
+        {!isRegistered && (
+          <button className="btn btn-primary" onClick={() => setRegVisible(true)} disabled={event.categories.length === 0}>
+            <Users size={15} /> Register Now
+          </button>
+        )}
+        {isRegistered && (
+          <button className="btn btn-secondary" disabled>
+            <Target size={15} /> Already Joined
+          </button>
+        )}
       </div>
 
       {/* Quick Stats */}
