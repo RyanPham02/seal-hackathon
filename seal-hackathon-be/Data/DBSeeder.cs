@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using SEAL.NET.Models.Entities;
 
 namespace SEAL.NET.Data
@@ -8,26 +7,6 @@ namespace SEAL.NET.Data
     {
         public static async Task SeedRolesAndAdminAsync(IServiceProvider serviceProvider)
         {
-            var db = serviceProvider.GetRequiredService<ApplicationDbContext>();
-            await db.Database.OpenConnectionAsync();
-            using (var command = db.Database.GetDbConnection().CreateCommand())
-            {
-                command.CommandText = @"
-                    CREATE TABLE IF NOT EXISTS ""KickRequests"" (
-                        ""KickRequestId"" uuid NOT NULL CONSTRAINT ""PK_KickRequests"" PRIMARY KEY,
-                        ""TeamId"" uuid NOT NULL,
-                        ""UserId"" uuid NOT NULL,
-                        ""Reason"" text NOT NULL,
-                        ""Status"" varchar(50) NOT NULL,
-                        ""RequestedAt"" timestamp without time zone NOT NULL,
-                        CONSTRAINT ""FK_KickRequests_Teams_TeamId"" FOREIGN KEY (""TeamId"") REFERENCES ""Teams"" (""TeamId"") ON DELETE CASCADE,
-                        CONSTRAINT ""FK_KickRequests_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
-                    );
-                    ALTER TABLE ""JudgeAssignments"" ADD COLUMN IF NOT EXISTS ""TeamId"" uuid NULL CONSTRAINT ""FK_JudgeAssignments_Teams_TeamId"" REFERENCES ""Teams"" (""TeamId"") ON DELETE CASCADE;
-                ";
-                await command.ExecuteNonQueryAsync();
-            }
-
             var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
             var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             var configuration = serviceProvider.GetRequiredService<IConfiguration>();

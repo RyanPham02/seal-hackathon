@@ -447,12 +447,46 @@ namespace SEAL.NET.Services.Implementations
                     return ServiceResult.BadRequest("Team leader must transfer leadership or remove other members before leaving.");
                 }
 
-                // Disband the team by removing all member associations.
-                // We do NOT delete the team row itself to prevent violating foreign key constraints
-                // (e.g. MentorAssignments, Submissions, Scores) and preserve history.
-                var allMembers = team.Members.ToList();
-                _context.TeamMembers.RemoveRange(allMembers);
+                // Disband the team. We do NOT delete the team row itself to prevent violating
+                // foreign key constraints (e.g. MentorAssignments, Submissions, Scores) and to
+                // preserve history. Instead we mark it Withdrawn so it no longer surfaces in
+                // recruiting / matchmaking listings, remove its members, and cancel any pending
+                // invitations so they cannot still be acted on.
+                var teamName = team.TeamName;
+                var otherMemberIds = team.Members
+                    .Where(m => m.UserId != currentUserId)
+                    .Select(m => m.UserId)
+                    .ToList();
+
+                _context.TeamMembers.RemoveRange(team.Members.ToList());
+
+                var pendingInvitations = await _context.TeamInvitations
+                    .Where(ti => ti.TeamId == team.TeamId && ti.Status == InvitationStatus.Pending)
+                    .ToListAsync();
+
+                foreach (var invitation in pendingInvitations)
+                {
+                    invitation.Status = InvitationStatus.Cancelled;
+                    invitation.RespondedAt = DateTime.UtcNow;
+                }
+
+                team.Status = TeamStatus.Withdrawn;
+
                 await _context.SaveChangesAsync();
+
+                if (otherMemberIds.Any())
+                {
+                    try
+                    {
+                        await _notificationService.CreateForUsersAsync(
+                            otherMemberIds,
+                            "Team disbanded",
+                            $"Team {teamName} has been disbanded by its leader.",
+                            "team");
+                    }
+                    catch { }
+                }
+
                 return ServiceResult.OkMessage("You have left the team and disbanded it.");
             }
 
