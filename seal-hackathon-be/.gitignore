@@ -3,5 +3,13 @@ obj/
 .vs/
 *.user
 *.suo
+
+# Local config holding secrets — NOT committed. Copy the *.Example.json
+# templates to these names and fill in real values (or use `dotnet user-secrets`).
 appsettings.Development.json
 appsettings.json
+
+# Local run logs
+run*.log
+*.out.log
+*.err.log

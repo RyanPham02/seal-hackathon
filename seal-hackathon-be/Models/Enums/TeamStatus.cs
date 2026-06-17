@@ -7,6 +7,7 @@
         Active,
         Eliminated,
         Withdrawn,
-        Champion
+        Champion,
+        Rejected
     }
 }

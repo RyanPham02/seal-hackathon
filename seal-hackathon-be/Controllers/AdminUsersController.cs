@@ -1,9 +1,9 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using SEAL.NET.DTOs.User;
-using SEAL.NET.Models.Entities;
+using SEAL.NET.Services.Common;
+using SEAL.NET.Services.Interfaces;
+using System.Security.Claims;
 
 namespace SEAL.NET.Controllers
 {
@@ -12,178 +12,45 @@ namespace SEAL.NET.Controllers
     [Authorize(Roles = "Admin")]
     public class AdminUsersController : ControllerBase
     {
-        private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RoleManager<IdentityRole<Guid>> _roleManager;
+        private readonly IAdminUserService _adminUserService;
 
-        private static readonly string[] AllowedRoles =
+        public AdminUsersController(IAdminUserService adminUserService)
         {
-            "Admin",
-            "Member",
-            "TeamLeader",
-            "Judge",
-            "Mentor"
-        };
+            _adminUserService = adminUserService;
+        }
 
-        public AdminUsersController(
-            UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole<Guid>> roleManager)
+        private Guid? GetActorUserId()
         {
-            _userManager = userManager;
-            _roleManager = roleManager;
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return Guid.TryParse(userId, out var parsed) ? parsed : null;
         }
 
         [HttpGet]
         public async Task<IActionResult> GetUsers()
-        {
-            var users = await _userManager.Users
-                .OrderByDescending(u => u.CreatedAt)
-                .ToListAsync();
-
-            var result = new List<object>();
-
-            foreach (var user in users)
-            {
-                var roles = await _userManager.GetRolesAsync(user);
-
-                result.Add(new
-                {
-                    user.Id,
-                    user.FullName,
-                    user.Email,
-                    studentType = user.StudentType == null ? null : user.StudentType.ToString(),
-                    user.StudentCode,
-                    user.SchoolName,
-                    user.IsApproved,
-                    user.CreatedAt,
-                    roles
-                });
-            }
-
-            return Ok(result);
-        }
+            => this.ToActionResult(await _adminUserService.GetUsersAsync());
 
         [HttpGet("pending")]
         public async Task<IActionResult> GetPendingUsers()
-        {
-            var users = await _userManager.Users
-                .Where(u => !u.IsApproved)
-                .OrderByDescending(u => u.CreatedAt)
-                .ToListAsync();
-
-            var result = new List<object>();
-
-            foreach (var user in users)
-            {
-                var roles = await _userManager.GetRolesAsync(user);
-
-                result.Add(new
-                {
-                    user.Id,
-                    user.FullName,
-                    user.Email,
-                    studentType = user.StudentType == null ? null : user.StudentType.ToString(),
-                    user.StudentCode,
-                    user.SchoolName,
-                    user.CreatedAt,
-                    roles
-                });
-            }
-
-            return Ok(result);
-        }
+            => this.ToActionResult(await _adminUserService.GetPendingUsersAsync());
 
         [HttpPut("{userId}/approve")]
         public async Task<IActionResult> ApproveUser(Guid userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-
-            if (user == null)
-                return NotFound(new { message = "User not found." });
-
-            user.IsApproved = true;
-
-            var result = await _userManager.UpdateAsync(user);
-
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            return Ok(new { message = "User approved successfully." });
-        }
+            => this.ToActionResult(await _adminUserService.ApproveUserAsync(GetActorUserId(), userId));
 
         [HttpPut("{userId}/reject")]
         public async Task<IActionResult> RejectUser(Guid userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-
-            if (user == null)
-                return NotFound(new { message = "User not found." });
-
-            user.IsApproved = false;
-
-            var result = await _userManager.UpdateAsync(user);
-
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            return Ok(new { message = "User rejected successfully." });
-        }
+            => this.ToActionResult(await _adminUserService.RejectUserAsync(GetActorUserId(), userId));
 
         [HttpPut("{userId}/role")]
         public async Task<IActionResult> UpdateUserRole(Guid userId, [FromBody] UpdateUserRoleRequest request)
-        {
-            if (!AllowedRoles.Contains(request.Role))
-                return BadRequest(new { message = "Invalid role." });
-
-            var user = await _userManager.FindByIdAsync(userId.ToString());
-
-            if (user == null)
-                return NotFound(new { message = "User not found." });
-
-            if (!await _roleManager.RoleExistsAsync(request.Role))
-                await _roleManager.CreateAsync(new IdentityRole<Guid>(request.Role));
-
-            var currentRoles = await _userManager.GetRolesAsync(user);
-
-            if (currentRoles.Any())
-            {
-                var removeResult = await _userManager.RemoveFromRolesAsync(user, currentRoles);
-
-                if (!removeResult.Succeeded)
-                    return BadRequest(removeResult.Errors);
-            }
-
-            var addResult = await _userManager.AddToRoleAsync(user, request.Role);
-
-            if (!addResult.Succeeded)
-                return BadRequest(addResult.Errors);
-
-            return Ok(new
-            {
-                message = "User role updated successfully.",
-                userId = user.Id,
-                role = request.Role
-            });
-        }
+            => this.ToActionResult(await _adminUserService.UpdateUserRoleAsync(GetActorUserId(), userId, request));
 
         [HttpDelete("{userId}")]
         public async Task<IActionResult> DeleteUser(Guid userId)
-        {
-            var user = await _userManager.FindByIdAsync(userId.ToString());
+            => this.ToActionResult(await _adminUserService.DeleteUserAsync(userId));
 
-            if (user == null)
-                return NotFound(new { message = "User not found." });
-
-            var roles = await _userManager.GetRolesAsync(user);
-
-            if (roles.Contains("Admin"))
-                return BadRequest(new { message = "Cannot delete an Admin account." });
-
-            var result = await _userManager.DeleteAsync(user);
-
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            return Ok(new { message = "User deleted successfully." });
-        }
+        [HttpPost("create-judge")]
+        public async Task<IActionResult> CreateGuestJudge([FromBody] CreateGuestJudgeRequest request)
+            => this.ToActionResult(await _adminUserService.CreateGuestJudgeAsync(GetActorUserId(), request));
     }
 }

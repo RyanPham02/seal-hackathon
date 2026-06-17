@@ -1,128 +1,111 @@
 "use client";
-import React, { useState, useRef, useEffect } from 'react';
-import { Button, Input, Typography, Avatar, Tooltip } from 'antd';
-import { MessageOutlined, CloseOutlined, MinusOutlined, SendOutlined, RobotOutlined, UserOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useRouter } from 'next/navigation';
 
-const { Text } = Typography;
+import React, { useState, useRef, useEffect } from "react";
+import { Button, Input, Avatar, Tooltip } from "antd";
+import { MessageOutlined, CloseOutlined, MinusOutlined, SendOutlined, RobotOutlined, UserOutlined, ArrowRightOutlined } from "@ant-design/icons";
+import { useRouter } from "next/navigation";
+import { useAuth } from "./AuthProvider";
+
+type MessageType = {
+  id: number;
+  sender: "bot" | "user";
+  text: string;
+  action?: { label: string; path: string } | null;
+};
+
+// Renders **bold** markers as <strong> React nodes without injecting raw HTML.
+// Splitting on a capturing group yields alternating plain/bold segments
+// (odd indices are the captured bold text), so user-controlled text is always
+// rendered as escaped React children — never parsed as markup.
+function renderFormattedText(text: string): React.ReactNode[] {
+  return text.split(/\*\*(.*?)\*\*/g).map((part, index) =>
+    index % 2 === 1 ? <strong key={index}>{part}</strong> : part,
+  );
+}
+
+const defaultMessages: MessageType[] = [
+  {
+    id: 1,
+    sender: "bot",
+    text: 'Hi! I am the SEAL virtual assistant. Ask me about registration, rules, prizes, teams, or mentors.',
+  },
+];
 
 export default function AIChatbot() {
   const router = useRouter();
+  const { user } = useAuth();
+  const isLoggedIn = user !== null;
+  const role = user
+    ? user.roles.includes("Admin")
+      ? "Admin"
+      : user.role || user.roles[0] || ""
+    : "";
   const [isOpen, setIsOpen] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [role, setRole] = useState(''); // default role empty
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  
-  useEffect(() => {
-    // Check role in local storage
-    if (typeof window !== "undefined") {
-        const stored = localStorage.getItem('currentUser');
-        if (stored) {
-            setIsLoggedIn(true);
-            try {
-                const user = JSON.parse(stored);
-                if (user.roles && user.roles.includes('Admin')) {
-                    setRole('Admin');
-                } else if (user.role) {
-                    setRole(user.role);
-                }
-            } catch (e) {}
-        } else {
-            setIsLoggedIn(false);
-        }
-    }
-  }, []);
-
-  const suggestedQuestions = [
-    "Cách đăng ký tham gia",
-    "Thể lệ cuộc thi",
-    "Cơ cấu giải thưởng",
-    "Tìm Mentor / Ghép nhóm"
-  ];
-  type MessageType = {
-    id: number;
-    sender: string;
-    text: string;
-    action?: { label: string; path: string } | null;
-  };
-
-  const defaultMessages: MessageType[] = [
-    {
-      id: 1,
-      sender: 'bot',
-      text: 'Chào bạn! Mình là trợ lý ảo AI của SEAL. Bạn cần hỗ trợ về "đăng ký", "thể lệ" hay "giải thưởng" nào?'
-    }
-  ];
-  
+  const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageType[]>(defaultMessages);
-  
+  const nextIdRef = useRef(2);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const removeAccents = (str: string) => {
-    return str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  };
 
   useEffect(() => {
     if (isOpen) {
-      scrollToBottom();
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isOpen]);
 
-  // Hiển thị cho cả User chưa đăng nhập và User đã đăng nhập (trừ Admin)
-  if (role === 'Admin') return null;
+  if (role === "Admin") return null;
+
+  const suggestedQuestions = [
+    "How do I register?",
+    "Competition rules",
+    "Prize structure",
+    "Find mentors or teammates",
+  ];
+
+  const removeAccents = (str: string) => {
+    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  };
 
   const handleSendQuestion = (questionText?: string) => {
     const textToSend = questionText || inputValue;
     if (!textToSend.trim()) return;
 
-    const userMessage = {
-      id: Date.now(),
-      sender: 'user',
-      text: textToSend
+    const userMessage: MessageType = {
+      id: nextIdRef.current++,
+      sender: "user",
+      text: textToSend,
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputValue(''); 
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue("");
 
     setTimeout(() => {
       const normalizedInput = removeAccents(userMessage.text);
-      let botResponse = '';
-
-      const botMessage = {
-        id: Date.now() + 1,
-        sender: 'bot',
-        text: botResponse,
-        action: null as {label: string, path: string} | null
+      const botMessage: MessageType = {
+        id: nextIdRef.current++,
+        sender: "bot",
+        text: "",
+        action: null,
       };
 
-      if (normalizedInput.includes('dang ky') || normalizedInput.includes('tham gia')) {
-        botMessage.text = 'Để đăng ký tham gia SEAL Hackathon, bạn có thể truy cập mục **My Team** để tạo nhóm mới hoặc vào **Matchmaking** để tìm đồng đội nhé!';
-        botMessage.action = { label: 'Tạo nhóm ngay', path: '/dashboard/teams' };
-      } 
-      else if (normalizedInput.includes('the le') || normalizedInput.includes('noi quy') || normalizedInput.includes('quy che')) {
-        botMessage.text = '📝 **Thể lệ cuộc thi:**\n1. Mỗi đội gồm 3-5 thành viên.\n2. Sản phẩm phải có tính thực tiễn cao.\n3. Nghiêm cấm mọi hành vi sao chép mã nguồn (Sẽ quét đạo văn).\n4. Nộp bài trước deadline hiển thị trên hệ thống.';
+      if (normalizedInput.includes("dang ky") || normalizedInput.includes("register") || normalizedInput.includes("tham gia")) {
+        botMessage.text = "To register for SEAL Hackathon, create a team from My Team or use Matchmaking to find teammates.";
+        botMessage.action = { label: "Go to Teams", path: "/dashboard/teams" };
+      } else if (normalizedInput.includes("rule") || normalizedInput.includes("the le") || normalizedInput.includes("noi quy")) {
+        botMessage.text = "Competition rules: teams must have 3-5 members, submissions must be original, and each round must be submitted before its deadline.";
+      } else if (normalizedInput.includes("prize") || normalizedInput.includes("giai thuong") || normalizedInput.includes("thuong")) {
+        botMessage.text = "Prize details are available on the Prizes page.";
+        botMessage.action = { label: "View Prizes", path: "/dashboard/prizes" };
+      } else if (normalizedInput.includes("team") || normalizedInput.includes("nhom") || normalizedInput.includes("doi")) {
+        botMessage.text = "You can manage your team from My Team. If you need teammates, open Matchmaking and send invitations.";
+        botMessage.action = { label: "Open Teams", path: "/dashboard/teams" };
+      } else if (normalizedInput.includes("mentor") || normalizedInput.includes("huong dan")) {
+        botMessage.text = "Mentors are assigned to support teams. You can see mentor-related updates from your team workspace.";
+      } else {
+        botMessage.text = "I can help with SEAL Hackathon registration, rules, prizes, teams, matchmaking, and mentors.";
       }
-      else if (normalizedInput.includes('giai thuong') || normalizedInput.includes('thuong') || normalizedInput.includes('tien')) {
-        botMessage.text = '🏆 **Cơ cấu giải thưởng siêu khủng năm nay:**\n🥇 Giải Nhất: 20.000.000 VNĐ + Kỷ niệm chương\n🥈 Giải Nhì: 10.000.000 VNĐ\n🥉 Giải Ba: 5.000.000 VNĐ\nĐăng ký chiến ngay nào bạn ơi!';
-        botMessage.action = { label: 'Xem Giải Thưởng', path: '/dashboard/prizes' };
-      }
-      else if (normalizedInput.includes('doi') || normalizedInput.includes('team') || normalizedInput.includes('nhom')) {
-        botMessage.text = 'Bạn có thể xem và quản lý nhóm của mình tại mục **My Team**. Hệ thống cũng hỗ trợ ghép đội (Matchmaking) nếu bạn chưa có nhóm!';
-        botMessage.action = { label: 'Đi tới Teams', path: '/dashboard/teams' };
-      }
-      else if (normalizedInput.includes('mentor') || normalizedInput.includes('huong dan') || normalizedInput.includes('giang vien')) {
-        botMessage.text = 'Các Mentor sẽ được phân công hỗ trợ nhóm của bạn. Bạn có thể xem danh sách Mentor trong mục **My Team** nhé!';
-      }
-      else {
-        botMessage.text = 'Xin lỗi, mình là AI Assistant của SEAL Hackathon. Mình không hiểu câu hỏi của bạn hoặc câu hỏi này không liên quan đến cuộc thi. Mình chỉ có thể hỗ trợ các thông tin về **Đăng ký**, **Thể lệ**, **Giải thưởng**, **Nhóm** và **Mentor**. Bạn vui lòng hỏi lại theo các chủ đề đó nhé!';
-      }
-      
-      setMessages(prev => [...prev, botMessage]);
-    }, 1000);
+
+      setMessages((prev) => [...prev, botMessage]);
+    }, 600);
   };
 
   return (
@@ -132,68 +115,67 @@ export default function AIChatbot() {
           type="primary"
           shape="circle"
           size="large"
-          icon={<MessageOutlined style={{ fontSize: '24px' }} />}
+          icon={<MessageOutlined style={{ fontSize: 24 }} />}
           onClick={() => setIsOpen(true)}
           style={{
-            position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            width: '60px',
-            height: '60px',
-            boxShadow: '0 10px 25px -5px rgba(59, 130, 246, 0.5)',
+            position: "fixed",
+            bottom: 30,
+            right: 30,
+            width: 60,
+            height: 60,
+            boxShadow: "0 10px 25px -5px rgba(59, 130, 246, 0.5)",
             zIndex: 1000,
-            background: 'linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)'
+            background: "linear-gradient(135deg, #2563eb 0%, #1e3a8a 100%)",
           }}
         />
       )}
 
       {isOpen && (
         <div style={{
-          position: 'fixed',
-          bottom: '30px',
-          right: '30px',
-          width: '350px',
-          height: '500px',
-          backgroundColor: '#fff',
-          borderRadius: '16px',
-          boxShadow: '0 20px 40px -10px rgba(0,0,0,0.2)',
+          position: "fixed",
+          bottom: 30,
+          right: 30,
+          width: 350,
+          height: 500,
+          backgroundColor: "#fff",
+          borderRadius: 16,
+          boxShadow: "0 20px 40px -10px rgba(0,0,0,0.2)",
           zIndex: 1000,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          border: '1px solid #e2e8f0'
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          border: "1px solid #e2e8f0",
         }}>
           <div style={{
-            padding: '16px',
-            background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-            color: '#fff',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
+            padding: 16,
+            background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+            color: "#fff",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#3b82f6' }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Avatar icon={<RobotOutlined />} style={{ backgroundColor: "#3b82f6" }} />
               <div>
-                <div style={{ fontWeight: 'bold', fontSize: '15px' }}>SEAL AI Assistant</div>
-                <div style={{ fontSize: '11px', color: '#94a3b8' }}>Luôn trực tuyến</div>
+                <div style={{ fontWeight: "bold", fontSize: 15 }}>SEAL AI Assistant</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>Always online</div>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Tooltip title="Thu gọn (Giữ lịch sử)">
-                <Button 
-                  type="text" 
-                  icon={<MinusOutlined style={{ color: '#fff' }} />} 
-                  onClick={() => setIsOpen(false)} 
-                />
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <Tooltip title="Minimize">
+                <Button type="text" icon={<MinusOutlined style={{ color: "#fff" }} />} onClick={() => setIsOpen(false)} />
               </Tooltip>
-              <Tooltip title="Đóng & Xóa trò chuyện">
-                <Button 
-                  type="text" 
-                  icon={<CloseOutlined style={{ color: '#fff' }} />} 
+              <Tooltip title="Close and clear chat">
+                <Button
+                  type="text"
+                  icon={<CloseOutlined style={{ color: "#fff" }} />}
                   onClick={() => {
                     setIsOpen(false);
-                    setTimeout(() => setMessages(defaultMessages), 300);
-                  }} 
+                    setTimeout(() => {
+                      setMessages(defaultMessages);
+                      nextIdRef.current = 2;
+                    }, 300);
+                  }}
                 />
               </Tooltip>
             </div>
@@ -201,90 +183,77 @@ export default function AIChatbot() {
 
           <div style={{
             flex: 1,
-            padding: '16px',
-            overflowY: 'auto',
-            backgroundColor: '#f8fafc',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '16px'
+            padding: 16,
+            overflowY: "auto",
+            backgroundColor: "#f8fafc",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
           }}>
             {messages.map((msg) => (
               <div key={msg.id} style={{
-                display: 'flex',
-                justifyContent: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                gap: '8px'
+                display: "flex",
+                justifyContent: msg.sender === "user" ? "flex-end" : "flex-start",
+                gap: 8,
               }}>
-                {msg.sender === 'bot' && <Avatar icon={<RobotOutlined />} size="small" style={{ backgroundColor: '#1e3a8a' }} />}
-                
-                <div style={{
-                  maxWidth: '75%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '8px'
-                }}>
+                {msg.sender === "bot" && <Avatar icon={<RobotOutlined />} size="small" style={{ backgroundColor: "#1e3a8a" }} />}
+
+                <div style={{ maxWidth: "75%", display: "flex", flexDirection: "column", gap: 8 }}>
                   <div style={{
-                    padding: '10px 14px',
-                    borderRadius: msg.sender === 'user' ? '16px 16px 0 16px' : '16px 16px 16px 0',
-                    backgroundColor: msg.sender === 'user' ? '#3b82f6' : '#fff',
-                    color: msg.sender === 'user' ? '#fff' : '#334155',
-                    boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                    fontSize: '13px',
-                    lineHeight: '1.5',
-                    whiteSpace: 'pre-line'
-                  }} dangerouslySetInnerHTML={{ __html: msg.text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
-                  
+                    padding: "10px 14px",
+                    borderRadius: msg.sender === "user" ? "16px 16px 0 16px" : "16px 16px 16px 0",
+                    backgroundColor: msg.sender === "user" ? "#3b82f6" : "#fff",
+                    color: msg.sender === "user" ? "#fff" : "#334155",
+                    boxShadow: "0 2px 5px rgba(0,0,0,0.05)",
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                    whiteSpace: "pre-line",
+                  }}>{renderFormattedText(msg.text)}</div>
+
                   {msg.action && (
-                    <Button 
-                      type="primary" 
-                      size="small" 
+                    <Button
+                      type="primary"
+                      size="small"
                       icon={<ArrowRightOutlined />}
                       onClick={() => {
-                        const currentUser = localStorage.getItem('currentUser');
-                        if (!currentUser) {
+                        if (!isLoggedIn) {
                           router.push(`/auth/login?redirect=${encodeURIComponent(msg.action!.path)}`);
                         } else {
                           router.push(msg.action!.path);
                         }
                         setIsOpen(false);
                       }}
-                      style={{ alignSelf: 'flex-start', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '12px' }}
+                      style={{ alignSelf: "flex-start", background: "#f59e0b", color: "#fff", border: "none", borderRadius: 12 }}
                     >
                       {msg.action.label}
                     </Button>
                   )}
                 </div>
-                
-                {msg.sender === 'user' && <Avatar icon={<UserOutlined />} size="small" style={{ backgroundColor: '#94a3b8' }} />}
+
+                {msg.sender === "user" && <Avatar icon={<UserOutlined />} size="small" style={{ backgroundColor: "#94a3b8" }} />}
               </div>
             ))}
             <div ref={messagesEndRef} />
           </div>
 
           <div style={{
-            padding: '8px 12px',
-            backgroundColor: '#fff',
-            borderTop: '1px solid #f1f5f9',
-            display: 'flex',
-            gap: '8px',
-            overflowX: 'auto',
-            whiteSpace: 'nowrap',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none'
+            padding: "8px 12px",
+            backgroundColor: "#fff",
+            borderTop: "1px solid #f1f5f9",
+            display: "flex",
+            gap: 8,
+            overflowX: "auto",
+            whiteSpace: "nowrap",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
           }}>
-            <style>
-              {`
-                .suggestions-container::-webkit-scrollbar {
-                  display: none;
-                }
-              `}
-            </style>
-            <div className="suggestions-container" style={{ display: 'flex', gap: '8px', overflowX: 'auto' }}>
-              {suggestedQuestions.map((q, idx) => (
-                <Button 
-                  key={idx} 
-                  size="small" 
+            <div className="suggestions-container" style={{ display: "flex", gap: 8, overflowX: "auto" }}>
+              {suggestedQuestions.map((q) => (
+                <Button
+                  key={q}
+                  size="small"
                   shape="round"
-                  style={{ fontSize: '12px', color: '#1e3a8a', borderColor: '#bfdbfe', background: '#eff6ff' }}
+                  style={{ fontSize: 12, color: "#1e3a8a", borderColor: "#bfdbfe", background: "#eff6ff" }}
                   onClick={() => handleSendQuestion(q)}
                 >
                   {q}
@@ -293,27 +262,15 @@ export default function AIChatbot() {
             </div>
           </div>
 
-          <div style={{
-            padding: '12px',
-            borderTop: '1px solid #e2e8f0',
-            backgroundColor: '#fff',
-            display: 'flex',
-            gap: '8px'
-          }}>
-            <Input 
-              placeholder="Nhập câu hỏi..." 
+          <div style={{ padding: 12, borderTop: "1px solid #e2e8f0", backgroundColor: "#fff", display: "flex", gap: 8 }}>
+            <Input
+              placeholder="Ask a question..."
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onPressEnter={() => handleSendQuestion()}
-              style={{ borderRadius: '20px' }}
+              style={{ borderRadius: 20 }}
             />
-            <Button 
-              type="primary" 
-              shape="circle" 
-              icon={<SendOutlined />} 
-              onClick={() => handleSendQuestion()} 
-              style={{ background: '#1e3a8a' }}
-            />
+            <Button type="primary" shape="circle" icon={<SendOutlined />} onClick={() => handleSendQuestion()} style={{ background: "#1e3a8a" }} />
           </div>
         </div>
       )}

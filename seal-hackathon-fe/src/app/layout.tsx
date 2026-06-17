@@ -1,18 +1,34 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import ThemeProvider from "../components/ThemeProvider";
+import AuthProvider from "../components/AuthProvider";
 import AIChatbotWrapper from "../components/AIChatbotWrapper";
+import FloatingThemeToggle from "../components/FloatingThemeToggle";
 import "./globals.css";
 
+const themeBootstrap = `
+(function() {
+  try {
+    var saved = localStorage.getItem('seal_theme');
+    var theme = saved
+      ? saved
+      : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+  } catch (e) { /* private mode / disabled storage: fall through to default dark */ }
+})();
+`;
+
 export const metadata: Metadata = {
-  title: "SEAL – Hệ thống Quản lý Hackathon Kỹ thuật Phần mềm",
+  title: "SEAL – Software Engineering Hackathon Management System",
   description:
-    "SEAL (Software Engineering Agile League) là nền tảng quản lý hackathon học thuật cho cuộc thi SE thường niên của Đại học FPT, hỗ trợ quản lý sự kiện, đăng ký đội thi, giám khảo và phân tích.",
+    "SEAL (Software Engineering Agile League) is an academic hackathon management platform for FPT University's annual SE competition, supporting event management, team registration, judging, and analytics.",
   keywords: ["hackathon", "SEAL", "FPT", "software engineering", "competition"],
-  authors: [{ name: "Hệ thống SEAL" }],
+  authors: [{ name: "SEAL System" }],
   openGraph: {
-    title: "Hệ thống Quản lý Hackathon SEAL",
-    description: "Quản lý sự kiện hackathon, đội thi, bài nộp và giám khảo một cách liền mạch.",
+    title: "SEAL Hackathon Management System",
+    description: "Manage hackathon events, teams, submissions, and judging seamlessly.",
     type: "website",
   },
 };
@@ -23,60 +39,35 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
       </head>
       <body>
-        <div id="google_translate_element" style={{ display: "none" }}></div>
         <ThemeProvider>
-          {children}
-          <AIChatbotWrapper />
+          <AuthProvider>
+            {children}
+            <FloatingThemeToggle />
+            <AIChatbotWrapper />
+          </AuthProvider>
         </ThemeProvider>
-        
-        <Script id="google-translate-patch" strategy="beforeInteractive">
+
+        {/* Google Translate container */}
+        <div id="google_translate_element" style={{ opacity: 0, position: "absolute", zIndex: -1, pointerEvents: "none" }} />
+
+        {/* Google Translate scripts */}
+        <Script id="google-translate-init" strategy="afterInteractive">
           {`
-            if (typeof Node === 'function' && Node.prototype) {
-              const originalRemoveChild = Node.prototype.removeChild;
-              Node.prototype.removeChild = function(child) {
-                if (child.parentNode !== this) {
-                  if (console) console.warn('Cannot remove a child from a different parent', child, this);
-                  return child;
-                }
-                return originalRemoveChild.apply(this, arguments);
-              };
-              const originalInsertBefore = Node.prototype.insertBefore;
-              Node.prototype.insertBefore = function(newNode, referenceNode) {
-                if (referenceNode && referenceNode.parentNode !== this) {
-                  if (console) console.warn('Cannot insert before a reference node from a different parent', referenceNode, this);
-                  return newNode;
-                }
-                return originalInsertBefore.apply(this, arguments);
-              };
+            function googleTranslateElementInit() {
+              new window.google.translate.TranslateElement({pageLanguage: 'en'}, 'google_translate_element');
             }
           `}
         </Script>
-        <Script
-          src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"
-          strategy="afterInteractive"
-        />
-        <Script id="google-translate-init" strategy="afterInteractive">
-          {`
-            window.googleTranslateElementInit = function() {
-              new window.google.translate.TranslateElement(
-                { 
-                  pageLanguage: 'vi', 
-                  includedLanguages: 'en,vi,ko,ja,zh-CN,fr,de,th',
-                  autoDisplay: false 
-                },
-                'google_translate_element'
-              );
-            };
-          `}
-        </Script>
+        <Script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" strategy="afterInteractive" />
       </body>
     </html>
   );

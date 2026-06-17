@@ -1,68 +1,73 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Trophy, Gift, Award, Star, Medal } from "lucide-react";
+import { Trophy, Award, Star, Medal, Gift } from "lucide-react";
+import { App } from "antd";
 import { apiRequest } from "@/lib/api";
 
-const ICON_MAP: Record<string, React.ReactNode> = {
-  "Trophy": <Trophy size={32} style={{ color: "#f59e0b" }} />,
-  "Medal": <Medal size={32} style={{ color: "#94a3b8" }} />,
-  "Star": <Star size={32} style={{ color: "#10b981" }} />,
-  "Award": <Award size={32} style={{ color: "#8b5cf6" }} />,
-  "Gift": <Gift size={32} style={{ color: "#ef4444" }} />
-};
+interface PrizeDto {
+  prizeId: string;
+  eventId: string;
+  eventName: string;
+  title: string;
+  amount?: string | null;
+  track?: string | null;
+  description?: string | null;
+  rank: number;
+}
+
+function prizeIcon(rank: number) {
+  if (rank <= 1) return <Trophy size={32} style={{ color: "#f59e0b" }} />;
+  if (rank === 2) return <Medal size={32} style={{ color: "#94a3b8" }} />;
+  if (rank === 3) return <Star size={32} style={{ color: "#10b981" }} />;
+  return <Award size={32} style={{ color: "#8b5cf6" }} />;
+}
 
 export default function PrizesPage() {
-  const [prizes, setPrizes] = useState<any[]>([]);
+  const { message } = App.useApp();
+  const [prizes, setPrizes] = useState<PrizeDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadPrizes = async () => {
+    const load = async () => {
       try {
-        const evts = await apiRequest<any[]>("/Events");
-        if (evts.length > 0) {
-          const eventId = evts[0].eventId;
-          const data = await apiRequest<any[]>(`/Prizes/Event/${eventId}`);
-          setPrizes(data);
-        }
+        const data = await apiRequest<PrizeDto[]>("/Prizes");
+        setPrizes(data);
       } catch (err) {
-        console.error("Lỗi tải giải thưởng:", err);
+        message.error(err instanceof Error ? err.message : "Could not load prizes.");
+        setPrizes([]);
       } finally {
         setLoading(false);
       }
     };
-    loadPrizes();
-  }, []);
-
-  if (loading) {
-    return <div style={{ padding: "2rem" }}>Đang tải giải thưởng...</div>;
-  }
+    load();
+  }, [message]);
 
   return (
     <div style={{ maxWidth: 1100, height: "calc(100vh - 100px)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div className="page-header" style={{ flexShrink: 0 }}>
         <div>
-          <h1 className="page-title">Giải thưởng</h1>
-          <p className="page-subtitle">Phần thưởng và hạng mục cho các đội thi chiến thắng</p>
+          <h1 className="page-title">Hackathon Prizes</h1>
+          <p className="page-subtitle">Rewards and categories for winning teams</p>
         </div>
       </div>
 
-      {prizes.length === 0 ? (
-        <div style={{ padding: "3rem", textAlign: "center", color: "var(--color-text-3)", background: "var(--color-surface-1)", borderRadius: "var(--radius-lg)", border: "1px dashed var(--color-border)" }}>
-          Chưa có giải thưởng nào được công bố cho sự kiện này.
-        </div>
+      {loading ? (
+        <div className="empty-state"><Gift size={48} className="empty-icon" /><div className="empty-title">Loading prizes…</div></div>
+      ) : prizes.length === 0 ? (
+        <div className="empty-state"><Gift size={48} className="empty-icon" /><div className="empty-title">No prizes announced yet</div></div>
       ) : (
         <div className="glass-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", gap: "1.5rem", overflowY: "auto", flex: 1, paddingRight: "0.5rem", paddingBottom: "2rem" }}>
           {prizes.map(p => (
             <div key={p.prizeId} className="glass-card" style={{ display: "flex", gap: "1.5rem", alignItems: "flex-start", padding: "1.5rem", transition: "transform 0.2s" }} onMouseOver={e => e.currentTarget.style.transform = "translateY(-2px)"} onMouseOut={e => e.currentTarget.style.transform = "translateY(0)"}>
               <div style={{ width: 64, height: 64, background: "rgba(255,255,255,0.05)", borderRadius: "var(--radius-md)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid rgba(255,255,255,0.1)" }}>
-                {ICON_MAP[p.iconName] || <Gift size={32} style={{ color: "#f59e0b" }} />}
+                {prizeIcon(p.rank)}
               </div>
               <div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem", gap: "1rem" }}>
                   <h3 style={{ fontSize: "1.25rem", margin: 0, color: "var(--color-text-1)" }}>{p.title}</h3>
-                  <span style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-primary)", fontFamily: "var(--font-display)" }}>{p.amount}</span>
+                  {p.amount && <span style={{ fontSize: "1.5rem", fontWeight: 800, color: "var(--color-primary)", fontFamily: "var(--font-display)", whiteSpace: "nowrap" }}>{p.amount}</span>}
                 </div>
-                <span className="glass-badge primary" style={{ marginBottom: "0.75rem", display: "inline-block" }}>{p.track}</span>
+                <span className="glass-badge primary" style={{ marginBottom: "0.75rem", display: "inline-block" }}>{p.track || p.eventName}</span>
                 <p style={{ fontSize: "0.875rem", color: "var(--color-text-2)", margin: 0, lineHeight: 1.5 }}>{p.description}</p>
               </div>
             </div>

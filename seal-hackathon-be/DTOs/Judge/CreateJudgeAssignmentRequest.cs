@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace SEAL.NET.DTOs.Judge
 {
@@ -12,5 +12,7 @@ namespace SEAL.NET.DTOs.Judge
 
         [Required]
         public Guid CategoryId { get; set; }
+
+        public List<Guid> TeamIds { get; set; } = [];
     }
 }

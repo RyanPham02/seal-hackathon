@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App } from "antd";
-import { ArrowRight, Building2, CheckCircle, Code2, GraduationCap, Lock, Mail, Trophy, User } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle, Code2, GraduationCap, Lock, Mail, Trophy, User } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from "@/lib/constants";
 import styles from "../auth.module.css";
 import vnUniversities from "../../../data/vietnam_universities.json";
 
@@ -16,8 +17,7 @@ export default function RegisterPage() {
   const { message } = App.useApp();
   const [studentType, setStudentType] = useState<StudentType>("");
   const [loading, setLoading] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState("");
+  const [step, setStep] = useState<"form" | "confirm">("form");
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -26,48 +26,69 @@ export default function RegisterPage() {
     studentId: "",
     university: "",
     customUniversity: "",
-    skills: "",
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (form.password !== form.confirmPassword) {
-      message.error("Xác nhận mật khẩu không khớp.");
+    if (!studentType) {
+      message.error("Please select a student type.");
       return;
     }
 
+    if (!PASSWORD_PATTERN.test(form.password)) {
+      message.error(PASSWORD_RULE_MESSAGE);
+      return;
+    }
+
+    if (form.password !== form.confirmPassword) {
+      message.error("Password confirmation does not match.");
+      return;
+    }
+
+    if (studentType === "external") {
+      if (!form.university.trim()) {
+        message.error("Please select or enter your university.");
+        return;
+      }
+      if (form.university === "Other / International" && !form.customUniversity.trim()) {
+        message.error("Please specify your university name.");
+        return;
+      }
+    }
+
+    setStep("confirm");
+  };
+
+  const handleConfirmAndRegister = async () => {
     setLoading(true);
     try {
-      if (!otpSent) {
-        await apiRequest("/Auth/send-register-otp", {
-          method: "POST",
-          body: JSON.stringify({ email: form.email }),
-          auth: false
-        });
-        message.success("Mã OTP đã được gửi đến email của bạn!");
-        setOtpSent(true);
-      } else {
-        await apiRequest("/Auth/register", {
-          method: "POST",
-          body: JSON.stringify({
-            fullName: form.fullName,
-            email: form.email,
-            password: form.password,
-            studentType: studentType === "fpt" ? 0 : 1,
-            studentCode: form.studentId,
-            schoolName: studentType === "fpt" ? "FPT University" : (form.university === "Khác (Other / International)" ? form.customUniversity : form.university),
-            skills: form.skills,
-            otp: otp
-          }),
-          auth: false
-        });
+      const isCustomUniversity = form.university === "Other / International";
+      const enteredUni = isCustomUniversity ? form.customUniversity : form.university;
+      const isFpt = enteredUni.toLowerCase().includes("fpt");
+      
+      const finalSchoolName = studentType === "fpt"
+        ? "FPT University"
+        : isFpt
+          ? `Local - ${enteredUni}`
+          : `External - ${enteredUni}`;
 
-        message.success("Tạo tài khoản thành công. Vui lòng đăng nhập.");
-        router.push("/auth/login");
-      }
+      await apiRequest("/Auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: form.fullName,
+          email: form.email,
+          password: form.password,
+          studentType: studentType === "fpt" ? 0 : 1,
+          studentCode: form.studentId,
+          schoolName: finalSchoolName,
+        }),
+      });
+
+      message.success("Account created successfully. Please login.");
+      router.push("/auth/login");
     } catch (err) {
-      message.error(err instanceof Error ? err.message : "Yêu cầu thất bại.");
+      message.error(err instanceof Error ? err.message : "Could not create account.");
     } finally {
       setLoading(false);
     }
@@ -81,6 +102,15 @@ export default function RegisterPage() {
           <div className={styles.orb2} />
 
           <div className={styles.card} style={{ maxWidth: 460 }}>
+            <button 
+              onClick={() => router.push("/auth/login")} 
+              className="btn btn-ghost" 
+              style={{ position: "absolute", top: "1.5rem", left: "1.5rem", padding: "0.5rem" }}
+              aria-label="Back to login"
+            >
+              <ArrowLeft size={20} />
+            </button>
+
             <div className={styles.logoWrap}>
               <div className={styles.logoIcon}>
                 <Trophy size={24} />
@@ -88,128 +118,153 @@ export default function RegisterPage() {
               <span className={styles.logoText}>SEAL</span>
             </div>
 
-            <h1 className={styles.title} style={{ fontSize: "1.3rem", marginBottom: "0.25rem" }}>Tạo tài khoản của bạn</h1>
-            <p className={styles.subtitle}>{otpSent ? "Xác minh email của bạn để tiếp tục" : "Đăng ký tài khoản hệ thống SEAL"}</p>
+            {step === "form" ? (
+              <>
+                <h1 className={styles.title} style={{ fontSize: "1.3rem", marginBottom: "0.25rem" }}>Create your account</h1>
+                <p className={styles.subtitle}>Register through the backend API</p>
 
-            {otpSent ? (
-              <form onSubmit={handleSubmit} className={styles.form}>
-                <div className="form-group">
-                  <label className="form-label">Nhập OTP</label>
-                  <div className={styles.inputWrap}>
-                    <Lock size={16} className={styles.inputIcon} />
-                    <input type="text" className={`form-input ${styles.inputWithIcon}`} placeholder="Mã OTP 6 chữ số" value={otp} onChange={(e) => setOtp(e.target.value)} required maxLength={6} />
-                  </div>
-                  <div style={{fontSize: "0.85rem", color: "var(--color-text-3)", marginTop: 8}}>Kiểm tra hộp thư đến hoặc thư rác để lấy mã OTP.</div>
-                </div>
-                <button type="submit" className="btn btn-primary btn-lg" style={{ justifyContent: "center", marginTop: "1rem" }} disabled={loading || otp.length < 6}>
-                  {loading ? <span className="spinner" /> : <><CheckCircle size={16} /> <span>Xác minh & Đăng ký</span></>}
-                </button>
-                <button type="button" className="btn btn-ghost" style={{width: "100%", marginTop: 8}} onClick={() => setOtpSent(false)}>Quay lại</button>
-              </form>
-            ) : (
-              <form onSubmit={handleSubmit} className={styles.form}>
-              <div className="form-group">
-                <label className="form-label" htmlFor="fullName">Họ và Tên</label>
-                <div className={styles.inputWrap}>
-                  <User size={16} className={styles.inputIcon} />
-                  <input id="fullName" type="text" className={`form-input ${styles.inputWithIcon}`} placeholder="Nguyen Van A" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="reg-email">Email</label>
-                <div className={styles.inputWrap}>
-                  <Mail size={16} className={styles.inputIcon} />
-                  <input id="reg-email" type="email" className={`form-input ${styles.inputWithIcon}`} placeholder="you@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="reg-pass">Mật khẩu</label>
-                <div className={styles.inputWrap}>
-                  <Lock size={16} className={styles.inputIcon} />
-                  <input id="reg-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Mật khẩu" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label" htmlFor="confirm-pass">Xác nhận Mật khẩu</label>
-                <div className={styles.inputWrap}>
-                  <Lock size={16} className={styles.inputIcon} />
-                  <input id="confirm-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Xác nhận mật khẩu" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Loại sinh viên</label>
-                <div className={styles.radioGroup}>
-                  <label className={styles.radioOption}>
-                    <input type="radio" name="type" value="fpt" checked={studentType === "fpt"} onChange={() => setStudentType("fpt")} required />
-                    <GraduationCap size={20} style={{ color: "var(--color-primary)" }} />
-                    <div>
-                      <div className={styles.radioLabel}>Sinh viên Đại học FPT</div>
-                      <div className={styles.radioSub}>Sử dụng mã số sinh viên FPT của bạn</div>
-                    </div>
-                  </label>
-                  <label className={styles.radioOption}>
-                    <input type="radio" name="type" value="external" checked={studentType === "external"} onChange={() => setStudentType("external")} required />
-                    <Building2 size={20} style={{ color: "var(--color-violet)" }} />
-                    <div>
-                      <div className={styles.radioLabel}>Sinh viên trường khác</div>
-                      <div className={styles.radioSub}>Cung cấp tên trường của bạn</div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {studentType && (
-                <>
+                <form onSubmit={handleReview} className={styles.form}>
                   <div className="form-group">
-                    <label className="form-label" htmlFor="sid">Mã số sinh viên</label>
-                    <input id="sid" type="text" className="form-input" placeholder={studentType === "fpt" ? "SE123456" : "Mã số sinh viên của bạn"} value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })} required />
+                    <label className="form-label" htmlFor="fullName">Full Name</label>
+                    <div className={styles.inputWrap}>
+                      <User size={16} className={styles.inputIcon} />
+                      <input id="fullName" type="text" className={`form-input ${styles.inputWithIcon}`} placeholder="Nguyen Van A" value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
+                    </div>
                   </div>
 
-                  {studentType === "external" && (
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="reg-email">Email</label>
+                    <div className={styles.inputWrap}>
+                      <Mail size={16} className={styles.inputIcon} />
+                      <input id="reg-email" type="email" className={`form-input ${styles.inputWithIcon}`} placeholder="you@email.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="reg-pass">Password</label>
+                    <div className={styles.inputWrap}>
+                      <Lock size={16} className={styles.inputIcon} />
+                      <input id="reg-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
+                    </div>
+                    <span className="form-hint">{PASSWORD_RULE_MESSAGE}</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="confirm-pass">Confirm Password</label>
+                    <div className={styles.inputWrap}>
+                      <Lock size={16} className={styles.inputIcon} />
+                      <input id="confirm-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Confirm password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Student Type</label>
+                    <div className={styles.radioGroup}>
+                      <label className={styles.radioOption}>
+                        <input type="radio" name="type" value="fpt" checked={studentType === "fpt"} onChange={() => setStudentType("fpt")} required />
+                        <GraduationCap size={20} style={{ color: "var(--color-primary)" }} />
+                        <div>
+                          <div className={styles.radioLabel}>FPT University Student</div>
+                          <div className={styles.radioSub}>Use your FPT student code</div>
+                        </div>
+                      </label>
+                      <label className={styles.radioOption}>
+                        <input type="radio" name="type" value="external" checked={studentType === "external"} onChange={() => setStudentType("external")} required />
+                        <Building2 size={20} style={{ color: "var(--color-violet)" }} />
+                        <div>
+                          <div className={styles.radioLabel}>External Student</div>
+                          <div className={styles.radioSub}>Provide your school name</div>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {studentType && (
                     <>
                       <div className="form-group">
-                        <label className="form-label" htmlFor="uni">Tên trường Đại học</label>
-                        <input id="uni" type="text" className="form-input" list="vn-universities" placeholder="Nhập để tìm kiếm trường đại học của bạn..." value={form.university} onChange={(e) => setForm({ ...form, university: e.target.value })} required />
-                        <datalist id="vn-universities">
-                          {vnUniversities.map((uni: string, idx: number) => (
-                            <option key={idx} value={uni} />
-                          ))}
-                          <option value="Khác (Other / International)" />
-                        </datalist>
+                        <label className="form-label" htmlFor="sid">Student ID</label>
+                        <input id="sid" type="text" className="form-input" placeholder={studentType === "fpt" ? "SE123456" : "Your student ID"} value={form.studentId} onChange={(e) => setForm({ ...form, studentId: e.target.value })} required />
                       </div>
 
-                      {form.university === "Khác (Other / International)" && (
-                        <div className="form-group">
-                          <label className="form-label" htmlFor="customUni">Ghi rõ trường Đại học của bạn</label>
-                          <input id="customUni" type="text" className="form-input" placeholder="Nhập tên trường đại học quốc tế của bạn..." value={form.customUniversity} onChange={(e) => setForm({ ...form, customUniversity: e.target.value })} required />
-                        </div>
+                      {studentType === "external" && (
+                        <>
+                          <div className="form-group">
+                            <label className="form-label" htmlFor="uni">University Name</label>
+                            <input id="uni" type="text" className="form-input" list="vn-universities" placeholder="Type to search your university..." value={form.university} onChange={(e) => setForm({ ...form, university: e.target.value })} required />
+                            <datalist id="vn-universities">
+                              {vnUniversities.map((uni: string, idx: number) => (
+                                <option key={idx} value={uni} />
+                              ))}
+                              <option value="Other / International" />
+                            </datalist>
+                          </div>
+
+                          {form.university === "Other / International" && (
+                            <div className="form-group">
+                              <label className="form-label" htmlFor="customUni">Specify your University</label>
+                              <input id="customUni" type="text" className="form-input" placeholder="Enter your international university name..." value={form.customUniversity} onChange={(e) => setForm({ ...form, customUniversity: e.target.value })} required />
+                            </div>
+                          )}
+                        </>
                       )}
                     </>
                   )}
 
-                  <div className="form-group">
-                    <label className="form-label" htmlFor="skills">Kỹ năng / Chuyên môn (Tùy chọn)</label>
-                    <div className={styles.inputWrap}>
-                      <Code2 size={16} className={styles.inputIcon} />
-                      <input id="skills" type="text" className={`form-input ${styles.inputWithIcon}`} placeholder="VD: React, Python, UI/UX" value={form.skills} onChange={(e) => setForm({ ...form, skills: e.target.value })} />
-                    </div>
+                  <button type="submit" className="btn btn-primary btn-lg" style={{ justifyContent: "center" }} disabled={!studentType}>
+                    Continue <CheckCircle size={16} />
+                  </button>
+                </form>
+
+                <p className={styles.switchRow}>
+                  Already have an account? <Link href="/auth/login" className={styles.switchLink}>Sign in</Link>
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className={styles.title} style={{ fontSize: "1.3rem", marginBottom: "0.25rem" }}>Confirm your details</h1>
+                <p className={styles.subtitle}>Please verify your information before registering.</p>
+
+                <div style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border-2)", borderRadius: "var(--radius-md)", padding: "1.25rem", marginBottom: "1.5rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Full Name</span>
+                    <strong style={{ color: "var(--color-text)" }}>{form.fullName}</strong>
                   </div>
-                </>
-              )}
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Email</span>
+                    <strong style={{ color: "var(--color-text)" }}>{form.email}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Student Type</span>
+                    <strong style={{ color: "var(--color-text)" }}>{studentType === "fpt" ? "FPT University" : "External"}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Student ID</span>
+                    <strong style={{ color: "var(--color-text)" }}>{form.studentId}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>University</span>
+                    <strong style={{ color: "var(--color-text)", textAlign: "right", maxWidth: "60%" }}>
+                      {studentType === "fpt" 
+                        ? "FPT University" 
+                        : (() => {
+                            const uni = form.university === "Other / International" ? form.customUniversity : form.university;
+                            return uni.toLowerCase().includes("fpt") ? `Local - ${uni}` : `External - ${uni}`;
+                          })()
+                      }
+                    </strong>
+                  </div>
+                </div>
 
-              <button type="submit" className="btn btn-primary btn-lg" style={{ justifyContent: "center", marginTop: "1rem" }} disabled={loading || !studentType}>
-                {loading ? <span className="spinner" /> : <><CheckCircle size={16} /> <span>Tạo tài khoản</span></>}
-              </button>
-            </form>
+                <div style={{ display: "flex", gap: "1rem" }}>
+                  <button type="button" className="btn btn-ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => setStep("form")} disabled={loading}>
+                    Back to Edit
+                  </button>
+                  <button type="button" className="btn btn-primary" style={{ flex: 1, justifyContent: "center" }} onClick={handleConfirmAndRegister} disabled={loading}>
+                    {loading ? <span className="spinner" /> : <><CheckCircle size={16} /> Confirm</>}
+                  </button>
+                </div>
+              </>
             )}
-
-            <p className={styles.switchRow}>
-              Đã có tài khoản? <Link href="/auth/login" className={styles.switchLink}>Đăng nhập</Link>
-            </p>
           </div>
         </div>
 
@@ -219,8 +274,8 @@ export default function RegisterPage() {
             <div className={styles.sloganIcon}>
               <Code2 size={24} color="white" />
             </div>
-            <h1 className={styles.sloganTitle}>Tham gia SEAL</h1>
-            <p className={styles.sloganDesc}>Tạo tài khoản, chờ admin duyệt, sau đó bắt đầu xây dựng dự án cùng đội của bạn.</p>
+            <h1 className={styles.sloganTitle}>Join SEAL</h1>
+            <p className={styles.sloganDesc}>Create an account, wait for admin approval, then start building with your team.</p>
           </div>
         </div>
       </div>

@@ -1,156 +1,311 @@
-"use client";
-import { useEffect,  useState } from "react";
-import { Upload, Link as LinkIcon, GitBranch, Play, FileText, CheckCircle, AlertCircle } from "lucide-react";
+﻿"use client";
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useEffect, useState } from "react";
+import { Upload, Link as LinkIcon, GitBranch, Play, FileText, CheckCircle, AlertCircle, RefreshCw, Award, MessageSquare } from "lucide-react";
 import { App } from "antd";
+import { apiRequest, fetchCurrentUser } from "@/lib/api";
 
-import { apiRequest } from "@/lib/api";
+type TeamDto = {
+  teamId: string;
+  teamName: string;
+  status: string;
+  leaderId: string;
+  category: {
+    categoryId: string;
+    categoryName: string;
+  };
+  currentRound: {
+    roundId: string;
+    roundName: string;
+  } | null;
+};
+
+type CriterionFeedbackDto = {
+  criteriaName: string;
+  scoreValue: number;
+  maxScore: number;
+  weight: number;
+  comment?: string | null;
+};
+
+type JudgeFeedbackDto = {
+  judgeName: string;
+  totalScore: number;
+  criteria: CriterionFeedbackDto[];
+};
+
+type EvaluationDto = {
+  isScored: boolean;
+  averageScore: number;
+  judges: JudgeFeedbackDto[];
+};
+
+type SubmissionDto = {
+  submissionId: string;
+  repositoryUrl?: string | null;
+  demoUrl?: string | null;
+  slideUrl?: string | null;
+  round: {
+    roundId: string;
+    roundName: string;
+  };
+  evaluation?: EvaluationDto | null;
+};
 
 export default function SubmissionsPage() {
   const { message } = App.useApp();
-  const [myTeam, setMyTeam] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState({
-    repoUrl: "", demoUrl: "", reportUrl: "", videoUrl: "", description: "", consent: false
+    repositoryUrl: "",
+    demoUrl: "",
+    slideUrl: "",
+    videoUrl: "",
+    description: "",
+    consent: false,
   });
+  const [team, setTeam] = useState<TeamDto | null>(null);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [evaluation, setEvaluation] = useState<EvaluationDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  const loadSubmissionContext = async () => {
+    setLoading(true);
+    setLoadError("");
+
+    try {
+      const [user, myTeam] = await Promise.all([
+        fetchCurrentUser(),
+        apiRequest<TeamDto>("/teams/my-team"),
+      ]);
+
+      setCurrentUserId(user.id);
+      setTeam(myTeam);
+
+      if (myTeam.currentRound) {
+        const submissions = await apiRequest<SubmissionDto[]>(`/submissions/team/${myTeam.teamId}`);
+        const currentSubmission = submissions.find((item) => item.round.roundId === myTeam.currentRound?.roundId);
+
+        if (currentSubmission) {
+          setIsSubmitted(true);
+          setEvaluation(currentSubmission.evaluation?.isScored ? currentSubmission.evaluation : null);
+          setForm((current) => ({
+            ...current,
+            repositoryUrl: currentSubmission.repositoryUrl ?? "",
+            demoUrl: currentSubmission.demoUrl ?? "",
+            slideUrl: currentSubmission.slideUrl ?? "",
+            videoUrl: "",
+          }));
+        } else {
+          setIsSubmitted(false);
+          setEvaluation(null);
+        }
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not load submission context.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const userStr = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
-    if (userStr) setCurrentUser(JSON.parse(userStr));
-
-    const fetchTeam = async () => {
-      try {
-        const team = await apiRequest<any>("/Teams/my-team");
-        setMyTeam(team);
-        if (team.submissions && team.submissions.length > 0) {
-          setIsSubmitted(true);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchTeam();
+    void loadSubmissionContext();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.repoUrl || !form.reportUrl) {
-      message.error("Yêu cầu nhập liên kết GitHub Repo và Báo cáo!");
+
+    if (!team) {
+      message.error("You need a team before submitting.");
       return;
     }
+
+    if (!team.currentRound) {
+      message.error("Your team has no active round to submit for.");
+      return;
+    }
+
+    if (team.leaderId !== currentUserId) {
+      message.error("Only the team leader can submit the project.");
+      return;
+    }
+
+    if (!form.repositoryUrl || !form.slideUrl) {
+      message.error("GitHub repository and slide/report links are required.");
+      return;
+    }
+
     if (!form.consent) {
-      message.error("Bạn phải đồng ý với Quy định của Đội thi và Thể lệ Cuộc thi.");
+      message.error("You must agree to the Team Consent and Hackathon Rules.");
       return;
     }
-    if (!myTeam || !myTeam.currentRoundId) {
-      message.error("Đội thi của bạn chưa được phân vào vòng thi nào.");
-      return;
-    }
-    
-    message.loading({ content: "Đang nộp dự án...", key: "submit" });
+
+    setSubmitting(true);
     try {
-      await apiRequest("/Submissions", {
+      await apiRequest("/submissions", {
         method: "POST",
         body: JSON.stringify({
-          teamId: myTeam.teamId,
-          roundId: myTeam.currentRoundId,
-          repositoryUrl: form.repoUrl,
-          demoUrl: form.demoUrl,
-          slideUrl: form.reportUrl
-        })
+          TeamId: team.teamId,
+          RoundId: team.currentRound.roundId,
+          RepositoryUrl: form.repositoryUrl.trim(),
+          DemoUrl: (form.demoUrl || form.videoUrl).trim() || null,
+          SlideUrl: form.slideUrl.trim(),
+        }),
       });
-      message.success({ content: "Nộp dự án thành công!", key: "submit" });
+
+      message.success("Project submitted successfully.");
       setIsSubmitted(true);
-    } catch (err: any) {
-      message.error({ content: err.message || "Nộp dự án thất bại!", key: "submit" });
+      await loadSubmissionContext();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not submit project.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  if (loading) return <div style={{ padding: "2rem" }}>Đang tải...</div>;
-  if (currentUser?.role?.toLowerCase()?.includes("judge")) {
-    return <div style={{ padding: "2rem" }}>Tính năng này chỉ dành cho Thí sinh. Giám khảo không cần nộp bài thi.</div>;
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <span className="spinner" />
+        <div className="empty-title">Loading submission</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="empty-state">
+        <AlertCircle size={48} className="empty-icon" />
+        <div className="empty-title">Submission is not ready</div>
+        <div className="empty-desc">{loadError}</div>
+        <button className="btn btn-secondary" onClick={loadSubmissionContext}>
+          <RefreshCw size={15} /> Retry
+        </button>
+      </div>
+    );
   }
 
   return (
     <div style={{ maxWidth: 800 }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Nộp dự án</h1>
-          <p className="page-subtitle">Nộp tài liệu dự án cuối cùng của bạn để chấm điểm</p>
+          <h1 className="page-title">Project Submission</h1>
+          <p className="page-subtitle">
+            {team?.teamName} {team?.currentRound ? `- ${team.currentRound.roundName}` : ""}
+          </p>
         </div>
-        {isSubmitted && <span className="badge badge-success"><CheckCircle size={14} style={{ marginRight: 4 }} /> Đã nộp</span>}
+        {isSubmitted && <span className="badge badge-success"><CheckCircle size={14} style={{ marginRight: 4 }} /> Submitted</span>}
       </div>
 
-      {!isSubmitted ? (
-        <div className="glass-card">
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem", marginBottom: "1.5rem" }}>
-            <AlertCircle size={20} style={{ color: "var(--color-primary)", flexShrink: 0, marginTop: 2 }} />
-            <div>
-              <h4 style={{ margin: "0 0 0.25rem 0", color: "var(--color-primary)", fontSize: "0.95rem" }}>Hướng dẫn nộp bài</h4>
-              <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-text-2)", lineHeight: 1.5 }}>
-                Đảm bảo repository của bạn ở chế độ công khai hoặc giám khảo có thể truy cập. Báo cáo thuyết trình phải nêu rõ vấn đề, giải pháp và kiến trúc kỹ thuật. Bạn có thể cập nhật các liên kết này cho đến khi hết hạn.
-              </p>
-            </div>
+      {evaluation && (
+        <div className="glass-card" style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+            <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Award size={18} style={{ color: "var(--color-primary)" }} /> Score & Feedback
+            </h3>
+            <span className="badge badge-success" style={{ fontSize: "1rem", padding: "0.35rem 0.85rem" }}>
+              {evaluation.averageScore.toFixed(2)} pts
+            </span>
           </div>
+          <p style={{ margin: "0 0 1rem 0", fontSize: "0.85rem", color: "var(--color-text-2)" }}>
+            Your submission has been evaluated by {evaluation.judges.length} judge{evaluation.judges.length > 1 ? "s" : ""}.
+            The overall score is the average of the judges&apos; weighted totals.
+          </p>
 
-          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <div className="form-group">
-              <label className="form-label"><GitBranch size={14} /> URL GitHub Repository <span style={{ color: "#ef4444" }}>*</span></label>
-              <input className="form-input" type="url" placeholder="https://github.com/your-username/project-repo" required value={form.repoUrl} onChange={e => setForm({...form, repoUrl: e.target.value})} />
-            </div>
-            
-            <div className="form-group">
-              <label className="form-label"><Play size={14} /> URL Demo Trực tiếp</label>
-              <input className="form-input" type="url" placeholder="https://your-project-demo.vercel.app" value={form.demoUrl} onChange={e => setForm({...form, demoUrl: e.target.value})} />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label"><FileText size={14} /> URL Thuyết trình / Báo cáo <span style={{ color: "#ef4444" }}>*</span></label>
-              <input className="form-input" type="url" placeholder="Liên kết Google Slides, Canva, hoặc PDF" required value={form.reportUrl} onChange={e => setForm({...form, reportUrl: e.target.value})} />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label"><LinkIcon size={14} /> URL Video Demo</label>
-              <input className="form-input" type="url" placeholder="Liên kết YouTube hoặc Loom (tối đa 3 phút)" value={form.videoUrl} onChange={e => setForm({...form, videoUrl: e.target.value})} />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Mô tả ngắn / Lưu ý cho Giám khảo</label>
-              <textarea className="form-textarea" rows={4} placeholder="Bất kỳ hướng dẫn cụ thể nào về cách chạy dự án của bạn..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
-            </div>
-
-            <div className="form-group" style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", marginTop: "0.5rem" }}>
-              <input 
-                type="checkbox" 
-                id="consent" 
-                style={{ marginTop: "0.25rem", width: "16px", height: "16px", cursor: "pointer" }} 
-                checked={form.consent}
-                onChange={e => setForm({...form, consent: e.target.checked})}
-              />
-              <label htmlFor="consent" style={{ fontSize: "0.9rem", color: "var(--color-text-2)", cursor: "pointer", lineHeight: 1.5 }}>
-                <strong>Quy định & Đồng thuận Đội thi:</strong> Tôi xác nhận rằng tất cả thành viên trong đội thi đã đóng góp cho dự án này và chúng tôi đồng ý với Quy tắc Ứng xử và thể lệ chính thức của cuộc thi.
-              </label>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
-              <button type="submit" className="btn btn-primary" style={{ padding: "0.6rem 2rem" }}>
-                <Upload size={16} /> Nộp Dự án
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : (
-        <div className="glass-card" style={{ textAlign: "center", padding: "4rem 2rem" }}>
-          <CheckCircle size={64} style={{ color: "#10b981", margin: "0 auto 1.5rem" }} />
-          <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.5rem" }}>Đã nhận bài nộp!</h2>
-          <p style={{ color: "var(--color-text-2)", marginBottom: "2rem" }}>Dự án của bạn đã được nộp thành công để chấm điểm. Chúc may mắn!</p>
-          <button className="btn btn-secondary" onClick={() => setIsSubmitted(false)}>Cập nhật bài nộp</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {evaluation.judges.map((judge, judgeIndex) => (
+              <div key={judgeIndex} style={{ border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                  <strong style={{ fontSize: "0.9rem" }}>{judge.judgeName}</strong>
+                  <span className="badge badge-primary">{judge.totalScore.toFixed(2)} pts</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {judge.criteria.map((criterion, criterionIndex) => (
+                    <div key={criterionIndex} style={{ fontSize: "0.85rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span style={{ color: "var(--color-text-2)" }}>{criterion.criteriaName}</span>
+                        <span>{criterion.scoreValue}/{criterion.maxScore} (weight {criterion.weight}%)</span>
+                      </div>
+                      {criterion.comment && (
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem", marginTop: "0.25rem", color: "var(--color-text-2)", fontStyle: "italic" }}>
+                          <MessageSquare size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                          <span>{criterion.comment}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
+
+      <div className="glass-card">
+        <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem", marginBottom: "1.5rem" }}>
+          <AlertCircle size={20} style={{ color: "var(--color-primary)", flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <h4 style={{ margin: "0 0 0.25rem 0", color: "var(--color-primary)", fontSize: "0.95rem" }}>Submission Guidelines</h4>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--color-text-2)", lineHeight: 1.5 }}>
+              Backend currently stores repository, demo/video, and slide/report URLs. Notes and track text are not submitted until matching backend fields are added.
+            </p>
+          </div>
+        </div>
+
+        {team?.status !== "Approved" && (
+          <div style={{ fontSize: "0.85rem", color: "var(--color-warning)", marginBottom: "1rem" }}>
+            Only approved teams can submit. Current team status: {team?.status}.
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+          <div className="form-group">
+            <label className="form-label"><GitBranch size={14} /> GitHub Repository URL <span style={{ color: "#ef4444" }}>*</span></label>
+            <input className="form-input" type="url" placeholder="https://github.com/your-username/project-repo" required value={form.repositoryUrl} onChange={e => setForm({...form, repositoryUrl: e.target.value})} />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label"><Play size={14} /> Live Demo URL</label>
+            <input className="form-input" type="url" placeholder="https://your-project-demo.vercel.app" value={form.demoUrl} onChange={e => setForm({...form, demoUrl: e.target.value})} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label"><FileText size={14} /> Presentation / Report URL <span style={{ color: "#ef4444" }}>*</span></label>
+            <input className="form-input" type="url" placeholder="Google Slides, Canva, or PDF link" required value={form.slideUrl} onChange={e => setForm({...form, slideUrl: e.target.value})} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label"><LinkIcon size={14} /> Demo Video URL</label>
+            <input className="form-input" type="url" placeholder="YouTube or Loom link" value={form.videoUrl} onChange={e => setForm({...form, videoUrl: e.target.value})} />
+            <span className="form-hint">If Live Demo URL is empty, this video URL is sent as DemoUrl.</span>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Brief Description / Note for Judges</label>
+            <textarea className="form-textarea" rows={4} placeholder="Not sent yet: backend does not have a matching submission description field." value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+          </div>
+
+          <div className="form-group" style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", marginTop: "0.5rem" }}>
+            <input 
+              type="checkbox" 
+              id="consent" 
+              style={{ marginTop: "0.25rem", width: "16px", height: "16px", cursor: "pointer" }} 
+              checked={form.consent}
+              onChange={e => setForm({...form, consent: e.target.checked})}
+            />
+            <label htmlFor="consent" style={{ fontSize: "0.9rem", color: "var(--color-text-2)", cursor: "pointer", lineHeight: 1.5 }}>
+              <strong>Team Consent & Rules:</strong> I confirm that all team members have contributed to this project and we agree to the Hackathon Code of Conduct and official rules.
+            </label>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.5rem" }}>
+            <button type="submit" className="btn btn-primary" style={{ padding: "0.6rem 2rem" }} disabled={submitting || team?.status !== "Approved"}>
+              {submitting ? <span className="spinner" /> : <><Upload size={16} /> {isSubmitted ? "Update Submission" : "Submit Project"}</>}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
-

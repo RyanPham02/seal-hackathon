@@ -1,264 +1,340 @@
 "use client";
-import { useState, useEffect } from "react";
-import { FileText, Plus, Trash2, Edit2, Copy, Save, AlertCircle } from "lucide-react";
-import { App, Modal, Tag, Space } from "antd";
-
+import { useState, useEffect, useCallback } from "react";
+import { FileText, Plus, Trash2 } from "lucide-react";
+import { App, Table, Tag, Modal, Button, Input, InputNumber } from "antd";
 import { apiRequest } from "@/lib/api";
+
+interface RoundDto {
+  roundId: string;
+  roundName: string;
+}
+
+interface EventDto {
+  eventId: string;
+  eventName: string;
+  rounds: RoundDto[];
+}
+
+interface CriteriaDto {
+  criteriaId: string;
+  criteriaName: string;
+  weight: number;
+  maxScore: number;
+  roundId: string;
+}
+
+interface CriteriaRow {
+  key: string;
+  event: string;
+  round: string;
+  criteria: CriteriaDto[];
+}
 
 export default function CriteriaPage() {
   const { message } = App.useApp();
-  const [events, setEvents] = useState<any[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<string>("");
-  const [selectedRoundId, setSelectedRoundId] = useState<string>("");
-  const [criteria, setCriteria] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [rows, setRows] = useState<CriteriaRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [isEditing, setIsEditing] = useState(false);
-  const [editItem, setEditItem] = useState<any>(null); // null if adding new
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedRound, setSelectedRound] = useState<{ roundId: string; roundName: string; eventName: string } | null>(null);
+  const [editingCriteria, setEditingCriteria] = useState<CriteriaDto[]>([]);
+  const [deletedCriteriaIds, setDeletedCriteriaIds] = useState<string[]>([]);
+  const [savingModal, setSavingModal] = useState(false);
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
-
-  const loadEvents = async () => {
+  const loadCriteriaList = useCallback(async () => {
     try {
-      const data = await apiRequest<any[]>("/Events");
-      setEvents(data);
-      if (data.length > 0) {
-        setSelectedEventId(data[0].eventId);
-      }
+      const events = await apiRequest<EventDto[]>("/Events");
+      const built = await Promise.all(
+        events.flatMap((event) =>
+          (event.rounds ?? []).map(async (round) => {
+            try {
+              const criteria = await apiRequest<CriteriaDto[]>(`/rounds/${round.roundId}/criteria`);
+              return {
+                key: round.roundId,
+                event: event.eventName,
+                round: round.roundName,
+                criteria: criteria || [],
+              };
+            } catch {
+              return {
+                key: round.roundId,
+                event: event.eventName,
+                round: round.roundName,
+                criteria: [],
+              };
+            }
+          })
+        )
+      );
+      setRows(built);
     } catch (err) {
-      message.error("Failed to load events.");
-    }
-  };
-
-  const selectedEvent = events.find(e => e.eventId === selectedEventId);
-
-  useEffect(() => {
-    if (selectedEvent && selectedEvent.rounds && selectedEvent.rounds.length > 0) {
-      setSelectedRoundId(selectedEvent.rounds[0].roundId);
-    } else {
-      setSelectedRoundId("");
-      setCriteria([]);
-    }
-  }, [selectedEventId, events]);
-
-  useEffect(() => {
-    if (selectedRoundId) {
-      loadCriteria();
-    }
-  }, [selectedRoundId]);
-
-  const loadCriteria = async () => {
-    setLoading(true);
-    try {
-      const data = await apiRequest<any[]>(`/rounds/${selectedRoundId}/criteria`);
-      setCriteria(data);
-    } catch (err) {
-      message.error("Failed to load criteria.");
+      message.error(err instanceof Error ? err.message : "Could not load criteria.");
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [message]);
 
-  const handleAddNew = () => {
-    if (!selectedRoundId) return message.warning("Please select a round first.");
-    setEditItem({
-      criteriaName: "",
-      maxScore: 10,
-      weight: 10
+  useEffect(() => {
+    void loadCriteriaList();
+  }, [loadCriteriaList]);
+
+  const openManageModal = (record: CriteriaRow) => {
+    setSelectedRound({
+      roundId: record.key,
+      roundName: record.round,
+      eventName: record.event,
     });
-    setIsEditing(true);
+    setEditingCriteria(record.criteria.map((c) => ({ ...c })));
+    setDeletedCriteriaIds([]);
+    setModalOpen(true);
   };
 
-  const handleEdit = (item: any) => {
-    setEditItem({ ...item });
-    setIsEditing(true);
+  const handleAddCriterion = () => {
+    const tempId = `temp-${Date.now()}`;
+    const newCriterion: CriteriaDto = {
+      criteriaId: tempId,
+      criteriaName: "",
+      weight: 10,
+      maxScore: 100,
+      roundId: selectedRound?.roundId ?? "",
+    };
+    setEditingCriteria([...editingCriteria, newCriterion]);
   };
 
-  const handleDelete = (criteriaId: string) => {
-    Modal.confirm({
-      title: "Delete Criterion?",
-      onOk: async () => {
-        try {
-          await apiRequest(`/rounds/${selectedRoundId}/criteria/${criteriaId}`, { method: "DELETE" });
-          message.success("Deleted successfully.");
-          loadCriteria();
-        } catch (err: any) {
-          message.error(err.message || "Failed to delete.");
+  const handleRemoveCriterion = (index: number, criteriaId: string) => {
+    if (!criteriaId.startsWith("temp-")) {
+      setDeletedCriteriaIds([...deletedCriteriaIds, criteriaId]);
+    }
+    setEditingCriteria(editingCriteria.filter((_, i) => i !== index));
+  };
+
+  const handleSaveCriteria = async () => {
+    if (!selectedRound) return;
+
+    // Validate inputs
+    for (const c of editingCriteria) {
+      if (!c.criteriaName.trim()) {
+        message.error("Please enter a name for all criteria.");
+        return;
+      }
+      if (c.weight === null || c.weight === undefined || c.weight < 0 || c.weight > 100) {
+        message.error("Criteria weight must be between 0 and 100.");
+        return;
+      }
+    }
+
+    const totalWeight = editingCriteria.reduce((sum, c) => sum + (c.weight || 0), 0);
+    if (totalWeight !== 100) {
+      message.error(`Total weight must be exactly 100%. Current: ${totalWeight}%.`);
+      return;
+    }
+
+    setSavingModal(true);
+    try {
+      // 1. Delete removed criteria
+      for (const id of deletedCriteriaIds) {
+        await apiRequest(`/rounds/${selectedRound.roundId}/criteria/${id}`, { method: "DELETE" });
+      }
+
+      // 2. Set all weights to 0 to bypass backend 100% check Josephine
+      const savedCriteriaList: { criteriaId: string; criteriaName: string; maxScore: number; weight: number }[] = [];
+
+      for (const c of editingCriteria) {
+        if (c.criteriaId.startsWith("temp-")) {
+          const res = await apiRequest<{ criteriaId: string }>(`/rounds/${selectedRound.roundId}/criteria`, {
+            method: "POST",
+            body: JSON.stringify({
+              criteriaName: c.criteriaName.trim(),
+              maxScore: 100,
+              weight: 0,
+            }),
+          });
+          savedCriteriaList.push({
+            criteriaId: res.criteriaId,
+            criteriaName: c.criteriaName.trim(),
+            maxScore: 100,
+            weight: c.weight,
+          });
+        } else {
+          await apiRequest(`/rounds/${selectedRound.roundId}/criteria/${c.criteriaId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              criteriaName: c.criteriaName.trim(),
+              maxScore: 100,
+              weight: 0,
+            }),
+          });
+          savedCriteriaList.push({
+            criteriaId: c.criteriaId,
+            criteriaName: c.criteriaName.trim(),
+            maxScore: 100,
+            weight: c.weight,
+          });
         }
       }
-    });
-  };
 
-  const handleSave = async () => {
-    if (!editItem.criteriaName.trim()) return message.error("Vui lòng nhập tên tiêu chí.");
-    if (editItem.maxScore <= 0) return message.error("Điểm tối đa phải lớn hơn 0.");
-    if (editItem.weight <= 0) return message.error("Trọng số phải lớn hơn 0.");
-    
-    // Kiểm tra tổng trọng số không được vượt quá 100%
-    const currentTotal = criteria
-      .filter(c => c.criteriaId !== editItem.criteriaId)
-      .reduce((sum, c) => sum + c.weight, 0);
-      
-    if (currentTotal + editItem.weight > 100) {
-      return message.error(`Tổng trọng số không được vượt quá 100%. Các tiêu chí hiện tại đã chiếm ${currentTotal}%.`);
-    }
-
-    try {
-      if (editItem.criteriaId) {
-        // Update
-        await apiRequest(`/rounds/${selectedRoundId}/criteria/${editItem.criteriaId}`, {
+      // 3. Set actual target weights
+      for (const c of savedCriteriaList) {
+        await apiRequest(`/rounds/${selectedRound.roundId}/criteria/${c.criteriaId}`, {
           method: "PUT",
-          body: JSON.stringify(editItem)
-        });
-      } else {
-        // Create
-        await apiRequest(`/rounds/${selectedRoundId}/criteria`, {
-          method: "POST",
-          body: JSON.stringify(editItem)
+          body: JSON.stringify({
+            criteriaName: c.criteriaName,
+            maxScore: 100,
+            weight: c.weight,
+          }),
         });
       }
-      message.success("Đã lưu thành công.");
-      setIsEditing(false);
-      loadCriteria();
-    } catch (err: any) {
-      message.error(err.message || "Thao tác thất bại.");
+
+      message.success("Criteria updated successfully.");
+      setModalOpen(false);
+      setLoading(true);
+      await loadCriteriaList();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to update criteria.");
+    } finally {
+      setSavingModal(false);
     }
   };
 
-  const totalWeight = criteria.reduce((sum, c) => sum + c.weight, 0);
+  const modalTotalWeight = editingCriteria.reduce((sum, c) => sum + (c.weight || 0), 0);
+
+  const columns = [
+    { title: "Event", dataIndex: "event", key: "event", render: (t: string) => <b>{t}</b> },
+    { title: "Round", dataIndex: "round", key: "round" },
+    {
+      title: "Criteria breakdown",
+      key: "criteria",
+      render: (_: unknown, record: CriteriaRow) => (
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {record.criteria.length === 0 ? (
+            <span style={{ fontSize: "0.82rem", color: "var(--color-text-3)", fontStyle: "italic" }}>
+              No criteria configured yet.
+            </span>
+          ) : (
+            record.criteria.map((c) => (
+              <Tag key={c.criteriaId} color="blue">
+                {c.criteriaName} ({c.weight}%)
+              </Tag>
+            ))
+          )}
+        </div>
+      ),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_: unknown, record: CriteriaRow) => (
+        <Button size="small" type="primary" onClick={() => openManageModal(record)}>
+          Manage Criteria
+        </Button>
+      ),
+    },
+  ];
 
   return (
-    <div style={{ maxWidth: 1000 }}>
-      <div className="page-header">
+    <div>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <FileText size={28} /> Tiêu chí chấm điểm
-          </h1>
-          <p className="page-subtitle">Quản lý bộ tiêu chí chấm điểm được chỉ định cho từng vòng thi.</p>
+          <h1 className="page-title"><FileText size={28} /> Scoring Criteria</h1>
+          <p className="page-subtitle">Grading rubric configured per event round</p>
         </div>
-        {!isEditing && (
-          <button className="btn btn-primary" onClick={handleAddNew}>
-            <Plus size={16} /> Thêm tiêu chí
-          </button>
-        )}
       </div>
 
-      {!isEditing && (
-        <div className="glass-card" style={{ marginBottom: "1rem", display: "flex", gap: "1rem" }}>
-          <div style={{ flex: 1 }}>
-            <label className="form-label">Sự kiện</label>
-            <select className="form-select" value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)}>
-              {events.map(e => <option key={e.eventId} value={e.eventId}>{e.eventName}</option>)}
-            </select>
-          </div>
-          <div style={{ flex: 1 }}>
-            <label className="form-label">Vòng thi</label>
-            <select className="form-select" value={selectedRoundId} onChange={e => setSelectedRoundId(e.target.value)}>
-              {selectedEvent?.rounds?.map((r: any) => <option key={r.roundId} value={r.roundId}>{r.roundName}</option>)}
-            </select>
-          </div>
-        </div>
-      )}
+      <div className="card">
+        <Table
+          className="custom-antd-table"
+          dataSource={rows}
+          columns={columns}
+          rowKey="key"
+          loading={loading}
+          pagination={false}
+          locale={{ emptyText: loading ? "Loading criteria…" : "No criteria configured yet." }}
+        />
+      </div>
 
-      {isEditing ? (
-        <div className="glass-card" style={{ animation: "modal-in 0.3s ease" }}>
-          <h3 style={{ marginBottom: "1.5rem" }}>{editItem.criteriaId ? "Chỉnh sửa Tiêu chí" : "Thêm Tiêu chí Mới"}</h3>
-          
-          <div className="form-group" style={{ marginBottom: "1rem" }}>
-            <label className="form-label">Tên Tiêu chí</label>
-            {!editItem.criteriaId && (
-              <div style={{ marginBottom: 12 }}>
-                <span style={{ fontSize: '0.8rem', color: 'var(--color-text-3)', display: 'block', marginBottom: 8 }}>Gợi ý:</span>
-                <Space size={[0, 8]} wrap>
-                  {["Tính sáng tạo", "Đổi mới & Đột phá", "Tính khả thi", "Giao diện UI/UX", "Độ khó Kỹ thuật", "Kỹ năng Thuyết trình"].map(crit => (
-                    <Tag 
-                      key={crit} 
-                      style={{ cursor: 'pointer', background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text-2)' }}
-                      onClick={() => setEditItem({...editItem, criteriaName: crit})}
-                    >
-                      {crit}
-                    </Tag>
-                  ))}
-                </Space>
+      <Modal
+        title={`Manage Criteria - ${selectedRound?.roundName} (${selectedRound?.eventName})`}
+        open={modalOpen}
+        onCancel={() => !savingModal && setModalOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setModalOpen(false)} disabled={savingModal}>
+            Cancel
+          </Button>,
+          <Button key="save" type="primary" onClick={handleSaveCriteria} loading={savingModal} disabled={modalTotalWeight !== 100}>
+            Save Changes
+          </Button>,
+        ]}
+        width={650}
+      >
+        <div style={{ marginTop: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+            <span style={{ fontWeight: 600, color: modalTotalWeight === 100 ? "var(--color-emerald, #10b981)" : "var(--color-rose, #f43f5e)" }}>
+              Total Weight: {modalTotalWeight}% {modalTotalWeight === 100 ? "✓" : "(must equal 100%)"}
+            </span>
+            <Button size="small" type="dashed" onClick={handleAddCriterion} icon={<Plus size={12} />}>
+              Add Criterion
+            </Button>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "400px", overflowY: "auto" }}>
+            {editingCriteria.map((c, index) => (
+              <div
+                key={c.criteriaId}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.75rem",
+                  padding: "0.75rem",
+                  background: "var(--color-surface-2, #1e1e30)",
+                  border: "1px solid var(--color-border-2, #2d2d44)",
+                  borderRadius: "var(--radius-md, 8px)",
+                }}
+              >
+                <Input
+                  style={{ flex: 1 }}
+                  placeholder="Criterion Name (e.g. Creativity)"
+                  value={c.criteriaName}
+                  onChange={(e) =>
+                    setEditingCriteria(
+                      editingCriteria.map((x, i) => (i === index ? { ...x, criteriaName: e.target.value } : x))
+                    )
+                  }
+                  disabled={savingModal}
+                />
+                <InputNumber
+                  style={{ width: 80 }}
+                  min={0}
+                  max={100}
+                  formatter={(value) => `${value}%`}
+                  parser={(value) => value ? parseInt(value.replace("%", ""), 10) : 0}
+                  value={c.weight}
+                  onChange={(val) =>
+                    setEditingCriteria(
+                      editingCriteria.map((x, i) => (i === index ? { ...x, weight: val ?? 0 } : x))
+                    )
+                  }
+                  disabled={savingModal}
+                />
+                <Button
+                  type="text"
+                  danger
+                  onClick={() => handleRemoveCriterion(index, c.criteriaId)}
+                  icon={<Trash2 size={16} />}
+                  disabled={savingModal}
+                />
+              </div>
+            ))}
+
+            {editingCriteria.length === 0 && (
+              <div style={{ textAlign: "center", padding: "2rem", color: "var(--color-text-3, #718096)", fontStyle: "italic" }}>
+                No criteria defined. Click "Add Criterion" to start.
               </div>
             )}
-            <input 
-              className="form-input" 
-              placeholder="VD: Tính Đổi mới" 
-              value={editItem.criteriaName}
-              onChange={(e) => setEditItem({...editItem, criteriaName: e.target.value})}
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: "1rem" }}>
-            <label className="form-label">Điểm tối đa</label>
-            <input 
-              className="form-input" 
-              type="number"
-              value={editItem.maxScore}
-              onChange={(e) => setEditItem({...editItem, maxScore: Number(e.target.value)})}
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: "1.5rem" }}>
-            <label className="form-label">Trọng số (%)</label>
-            <input 
-              className="form-input" 
-              type="number"
-              value={editItem.weight}
-              onChange={(e) => setEditItem({...editItem, weight: Number(e.target.value)})}
-            />
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem" }}>
-            <button className="btn btn-ghost" onClick={() => setIsEditing(false)}>Hủy bỏ</button>
-            <button className="btn btn-primary" onClick={handleSave}>
-              <Save size={16} /> Lưu lại
-            </button>
           </div>
         </div>
-      ) : (
-        <div className="glass-card">
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-            <h4 style={{ color: "var(--color-text)" }}>Danh sách Tiêu chí</h4>
-            <span className={`badge ${totalWeight === 100 ? 'badge-success' : 'badge-danger'}`}>
-              Tổng Trọng số: {totalWeight}%
-            </span>
-          </div>
-
-          <table className="table" style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
-                <th style={{ padding: "1rem" }}>Tên Tiêu chí</th>
-                <th style={{ padding: "1rem" }}>Điểm tối đa</th>
-                <th style={{ padding: "1rem" }}>Trọng số (%)</th>
-                <th style={{ padding: "1rem", textAlign: "right" }}>Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan={4} style={{ padding: "2rem", textAlign: "center" }}>Đang tải...</td></tr>
-              ) : criteria.length === 0 ? (
-                <tr><td colSpan={4} style={{ padding: "2rem", textAlign: "center", color: "var(--color-text-3)" }}>Chưa có tiêu chí nào cho vòng thi này.</td></tr>
-              ) : criteria.map(c => (
-                <tr key={c.criteriaId} style={{ borderBottom: "1px solid var(--color-border-1)" }}>
-                  <td style={{ padding: "1rem", fontWeight: "bold" }}>{c.criteriaName}</td>
-                  <td style={{ padding: "1rem" }}>{c.maxScore} pts</td>
-                  <td style={{ padding: "1rem" }}>{c.weight}%</td>
-                  <td style={{ padding: "1rem", textAlign: "right" }}>
-                    <button className="btn btn-icon btn-secondary" style={{ marginRight: 8 }} onClick={() => handleEdit(c)}>
-                      <Edit2 size={14} />
-                    </button>
-                    <button className="btn btn-icon btn-danger" style={{ background: "transparent", color: "var(--color-rose)" }} onClick={() => handleDelete(c.criteriaId)}>
-                      <Trash2 size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }

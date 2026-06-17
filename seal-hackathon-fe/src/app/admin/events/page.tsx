@@ -1,402 +1,556 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Calendar, Clock, Save, AlertCircle, Plus, Trash2, Edit2, Play, CheckCircle2 } from "lucide-react";
-import { App, Modal } from "antd";
-
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Calendar, Clock, Save, AlertCircle, RefreshCw,
+  Plus, Trash2, GripVertical, Target, ChevronRight,
+} from "lucide-react";
+import { App } from "antd";
 import { apiRequest } from "@/lib/api";
+import { TRACKS_OPTIONS } from "@/lib/constants";
 
+/* ─── Types ─── */
+type RoundDto = {
+  roundId: string;
+  roundName: string;
+  roundOrder: number;
+  maxTeamsAdvancing: number;
+  submissionDeadline: string | null;
+};
+
+type EventDto = {
+  eventId: string;
+  eventName: string;
+  description?: string | null;
+  startDate: string;
+  endDate: string;
+  status: string;
+  rounds: RoundDto[];
+};
+
+/* ─── Helpers ─── */
+function toDateTimeLocal(value: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toApiDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  // Guard against `new Date("").toISOString()` throwing a cryptic RangeError
+  // when a deadline field has been cleared.
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function toDisplayDate(value?: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short", day: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  }).format(new Date(value));
+}
+
+/* ─── Create-form defaults ─── */
+const INITIAL_EVENT_FORM = { eventName: "", description: "", startDate: "", endDate: "" };
+const INITIAL_ROUND = () => ({ id: Date.now(), name: "", topN: "5", deadline: "" });
+
+/* ════════════════════════════════════════════════════════════════ */
 export default function AdminEventsPage() {
   const { message } = App.useApp();
-  const [events, setEvents] = useState<any[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState<string>("");
-  
-  // Event Edit State
-  const [isEventEditing, setIsEventEditing] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<any>(null);
 
-  // Round Edit State
-  const [isRoundEditing, setIsRoundEditing] = useState(false);
-  const [editingRound, setEditingRound] = useState<any>(null);
+  /* ── View toggle ── */
+  const [view, setView] = useState<"list" | "create">("list");
+
+  /* ── Events list ── */
+  const [events, setEvents] = useState<EventDto[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [draftDeadlines, setDraftDeadlines] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  /* ── Create form ── */
+  const [eventForm, setEventForm] = useState(INITIAL_EVENT_FORM);
+  const [rounds, setRounds] = useState([{ id: 1, name: "Qualifying Round", topN: "10", deadline: "" }]);
+  const [selectedTracks, setSelectedTracks] = useState<string[]>([]);
+  const [createStep, setCreateStep] = useState(1);
+  const [submitting, setSubmitting] = useState(false);
+
+  /* ─────────────── Load events ─────────────── */
+  const loadEventsData = useCallback(
+    async (active: { value: boolean }) => {
+      try {
+        const data = await apiRequest<EventDto[]>("/Events");
+        if (!active.value) return;
+        setEvents(data);
+        setSelectedEventId((cur) => cur || data[0]?.eventId || "");
+        setDraftDeadlines(
+          data.reduce<Record<string, string>>((acc, ev) => {
+            ev.rounds.forEach((r) => { acc[r.roundId] = toDateTimeLocal(r.submissionDeadline); });
+            return acc;
+          }, {}),
+        );
+      } catch (err) {
+        if (!active.value) return;
+        message.error(err instanceof Error ? err.message : "Could not load events.");
+        setEvents([]);
+        setSelectedEventId("");
+      } finally {
+        if (active.value) setLoading(false);
+      }
+    },
+    [message],
+  );
 
   useEffect(() => {
-    loadEvents();
-  }, []);
+    const active = { value: true };
+    // Defer out of the synchronous effect body (react-hooks/set-state-in-effect):
+    // loadEventsData sets state only after an awaited fetch and respects the `active`
+    // guard, so the microtask hop keeps observable behavior identical.
+    void Promise.resolve().then(() => loadEventsData(active));
+    return () => { active.value = false; };
+  }, [loadEventsData]);
 
-  const loadEvents = async () => {
-    try {
-      const data = await apiRequest<any[]>("/Events");
-      setEvents(data);
-      if (data.length > 0 && !selectedEventId) {
-        setSelectedEventId(data[0].eventId);
-      }
-    } catch (err: any) {
-      message.error("Không thể tải sự kiện: " + err.message);
-    }
-  };
+  const refreshEvents = useCallback(async () => {
+    setLoading(true);
+    const active = { value: true };
+    await loadEventsData(active);
+  }, [loadEventsData]);
 
-  const selectedEvent = events.find(e => e.eventId === selectedEventId);
+  const selectedEvent = useMemo(
+    () => events.find((ev) => ev.eventId === selectedEventId),
+    [events, selectedEventId],
+  );
 
-  // --- EVENT ACTIONS ---
-  const handleAddNewEvent = () => {
-    setEditingEvent({
-      eventName: "",
-      description: "",
-      startDate: new Date().toISOString().slice(0, 16),
-      endDate: new Date(Date.now() + 86400000).toISOString().slice(0, 16),
-      maxTeamSize: 5
-    });
-    setIsEventEditing(true);
-  };
-
-  const handleEditEvent = (evt: any) => {
-    setEditingEvent({
-      eventId: evt.eventId,
-      eventName: evt.eventName,
-      description: evt.description || "",
-      startDate: evt.startDate ? evt.startDate.slice(0, 16) : "",
-      endDate: evt.endDate ? evt.endDate.slice(0, 16) : "",
-      maxTeamSize: evt.maxTeamSize || 5
-    });
-    setIsEventEditing(true);
-  };
-
-  const handleSaveEvent = async () => {
-    if (!editingEvent.eventName.trim()) return message.error("Vui lòng nhập tên sự kiện");
-    try {
-      if (editingEvent.eventId) {
-        await apiRequest(`/Events/${editingEvent.eventId}`, {
-          method: "PUT",
-          body: JSON.stringify(editingEvent)
-        });
-        message.success("Cập nhật sự kiện thành công");
-      } else {
-        const result = await apiRequest<any>(`/Events`, {
-          method: "POST",
-          body: JSON.stringify(editingEvent)
-        });
-        const newId = result.eventId || result.id;
-        setSelectedEventId(newId);
-        message.success("Tạo sự kiện thành công");
-        
-        // Auto-generate standard hackathon rounds
-        try {
-          const standardRounds = [
-            { roundName: "Vòng sơ khảo", roundOrder: 1, maxTeamsAdvancing: 30, submissionDeadline: editingEvent.endDate },
-            { roundName: "Bán kết", roundOrder: 2, maxTeamsAdvancing: 10, submissionDeadline: editingEvent.endDate },
-            { roundName: "Chung kết", roundOrder: 3, maxTeamsAdvancing: 3, submissionDeadline: editingEvent.endDate }
-          ];
-          for (const r of standardRounds) {
-            await apiRequest(`/events/${newId}/rounds`, {
-              method: "POST",
-              body: JSON.stringify({ ...r, submissionDeadline: new Date(r.submissionDeadline).toISOString() })
-            });
-          }
-          message.success("Đã tự động tạo các vòng thi tiêu chuẩn");
-        } catch (roundErr) {
-          console.error("Không thể tự động tạo các vòng thi", roundErr);
-        }
-      }
-      setIsEventEditing(false);
-      loadEvents();
-    } catch (err: any) {
-      message.error(err.message || "Lưu sự kiện thất bại");
-    }
-  };
-
-  const handleDeleteEvent = async (id: string) => {
-    Modal.confirm({
-      title: "Xóa Sự kiện?",
-      content: "Hành động này sẽ xóa tất cả các vòng thi và dữ liệu liên quan.",
-      onOk: async () => {
-        try {
-          await apiRequest(`/Events/${id}`, { method: "DELETE" });
-          message.success("Đã xóa sự kiện");
-          setSelectedEventId("");
-          loadEvents();
-        } catch (err: any) {
-          message.error(err.message || "Xóa sự kiện thất bại");
-        }
-      }
-    });
-  };
-
-  // --- ROUND ACTIONS ---
-  const handleAddRound = () => {
+  /* ─────────────── Save deadlines ─────────────── */
+  const handleSave = async () => {
     if (!selectedEvent) return;
-    const currentRoundsCount = selectedEvent.rounds?.length || 0;
-    if (currentRoundsCount >= 5) {
-      return message.error("Một sự kiện hackathon không thể có quá 5 vòng thi.");
-    }
-    const nextOrder = currentRoundsCount + 1;
-    setEditingRound({
-      roundName: `Vòng thi ${nextOrder}`,
-      submissionDeadline: selectedEvent.endDate ? selectedEvent.endDate.slice(0, 16) : "",
-      roundOrder: nextOrder,
-      maxTeamsAdvancing: 10
-    });
-    setIsRoundEditing(true);
-  };
-
-  const handleEditRound = (round: any) => {
-    setEditingRound({
-      roundId: round.roundId,
-      roundName: round.roundName,
-      submissionDeadline: round.submissionDeadline ? round.submissionDeadline.slice(0, 16) : "",
-      roundOrder: round.roundOrder,
-      maxTeamsAdvancing: round.maxTeamsAdvancing
-    });
-    setIsRoundEditing(true);
-  };
-
-  const handleSaveRound = async () => {
-    if (!editingRound.roundName.trim() || !editingRound.submissionDeadline) {
-      return message.error("Vui lòng điền các trường bắt buộc của vòng thi.");
-    }
-    if (editingRound.roundOrder > 5) {
-      return message.error("Số thứ tự không thể vượt quá 5.");
-    }
-    if (editingRound.maxTeamsAdvancing > 500) {
-      return message.error("Chỉ tiêu đội thi tiếp tục không thể vượt quá 500.");
-    }
-
-    // Logical Validations (Funnel & Sequence)
-    const otherRounds = (selectedEvent.rounds || []).filter((r: any) => r.roundId !== editingRound.roundId);
-    
-    // Funnel Logic validation: Subsequent rounds must have fewer or equal advancing teams
-    const invalidPreviousRounds = otherRounds.filter((r: any) => r.roundOrder < editingRound.roundOrder && r.maxTeamsAdvancing < editingRound.maxTeamsAdvancing);
-    if (invalidPreviousRounds.length > 0) {
-      return message.error(`Lỗi hình phễu: Một vòng thi trước (Thứ tự ${invalidPreviousRounds[0].roundOrder}) chỉ có ${invalidPreviousRounds[0].maxTeamsAdvancing} đội thi đi tiếp. Bạn không thể cho phép nhiều hơn số đó.`);
-    }
-
-    const invalidNextRounds = otherRounds.filter((r: any) => r.roundOrder > editingRound.roundOrder && r.maxTeamsAdvancing > editingRound.maxTeamsAdvancing);
-    if (invalidNextRounds.length > 0) {
-      return message.error(`Lỗi hình phễu: Một vòng thi sau (Thứ tự ${invalidNextRounds[0].roundOrder}) yêu cầu ${invalidNextRounds[0].maxTeamsAdvancing} đội thi. Bạn phải cho phép ít nhất bằng số đó.`);
-    }
-    
-    // Ensure deadline is an ISO string suitable for C# DateTime
-    const payload = {
-      ...editingRound,
-      submissionDeadline: new Date(editingRound.submissionDeadline).toISOString()
-    };
-
+    const changed = selectedEvent.rounds.filter(
+      (r) => draftDeadlines[r.roundId] !== toDateTimeLocal(r.submissionDeadline),
+    );
+    if (changed.length === 0) { message.info("No deadline changes to save."); return; }
+    setSaving(true);
     try {
-      if (editingRound.roundId) {
-        await apiRequest(`/events/${selectedEventId}/rounds/${editingRound.roundId}`, {
-          method: "PUT",
-          body: JSON.stringify(payload)
-        });
-        message.success("Cập nhật vòng thi thành công");
-      } else {
-        await apiRequest(`/events/${selectedEventId}/rounds`, {
-          method: "POST",
-          body: JSON.stringify(payload)
-        });
-        message.success("Tạo vòng thi thành công");
-      }
-      setIsRoundEditing(false);
-      loadEvents(); // Reload to get updated rounds
-    } catch (err: any) {
-      message.error(err.message || "Lưu vòng thi thất bại");
+      await Promise.all(
+        changed.map((r) =>
+          apiRequest(`/events/${selectedEvent.eventId}/rounds/${r.roundId}`, {
+            method: "PUT",
+            body: JSON.stringify({
+              roundName: r.roundName,
+              submissionDeadline: toApiDate(draftDeadlines[r.roundId]),
+              roundOrder: r.roundOrder,
+              maxTeamsAdvancing: r.maxTeamsAdvancing,
+            }),
+          }),
+        ),
+      );
+      message.success("Round deadlines updated successfully.");
+      await refreshEvents();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not update round deadlines.");
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDeleteRound = async (roundId: string) => {
-    Modal.confirm({
-      title: "Xóa Vòng thi?",
-      onOk: async () => {
-        try {
-          await apiRequest(`/events/${selectedEventId}/rounds/${roundId}`, { method: "DELETE" });
-          message.success("Đã xóa vòng thi");
-          loadEvents();
-        } catch (err: any) {
-          message.error(err.message || "Xóa vòng thi thất bại");
+  /* ─────────────── Create event ─────────────── */
+  const addRound = () => setRounds((rs) => [...rs, { ...INITIAL_ROUND(), name: `Round ${rs.length + 1}` }]);
+  const removeRound = (id: number) => setRounds((rs) => rs.filter((r) => r.id !== id));
+  const toggleTrack = (t: string) =>
+    setSelectedTracks((sel) => (sel.includes(t) ? sel.filter((x) => x !== t) : [...sel, t]));
+
+  const handleCreateEvent = async () => {
+    if (!eventForm.eventName.trim()) { message.error("Please enter an event name."); return; }
+    if (!eventForm.startDate || !eventForm.endDate) { message.error("Start date and end date are required."); return; }
+    if (new Date(eventForm.endDate) <= new Date(eventForm.startDate)) { message.error("End date must be after start date."); return; }
+    if (rounds.some((r) => !r.name.trim() || !r.deadline)) { message.error("Every round needs a name and submission deadline."); return; }
+
+    setSubmitting(true);
+    try {
+      const created = await apiRequest<{ eventId?: string; id?: string }>("/Events", {
+        method: "POST",
+        body: JSON.stringify({
+          eventName: eventForm.eventName.trim(),
+          description: eventForm.description.trim() || null,
+          startDate: toApiDate(eventForm.startDate),
+          endDate: toApiDate(eventForm.endDate),
+        }),
+      });
+
+      const eventId = created.eventId ?? created.id ?? "";
+
+      // The event now exists; if a follow-up call fails, surface what happened
+      // instead of letting a retry create a duplicate event.
+      try {
+        await Promise.all(
+          rounds.map((r, i) =>
+            apiRequest(`/events/${eventId}/rounds`, {
+              method: "POST",
+              body: JSON.stringify({
+                roundName: r.name.trim(),
+                submissionDeadline: toApiDate(r.deadline),
+                roundOrder: i + 1,
+                maxTeamsAdvancing: Number(r.topN) || 0,
+              }),
+            }),
+          ),
+        );
+
+        if (selectedTracks.length > 0) {
+          await Promise.all(
+            selectedTracks.map((track) =>
+              apiRequest(`/events/${eventId}/categories`, {
+                method: "POST",
+                body: JSON.stringify({ categoryName: track, description: null }),
+              }),
+            ),
+          );
         }
+      } catch (configErr) {
+        message.warning(
+          `The event was created, but part of its configuration failed: ${
+            configErr instanceof Error ? configErr.message : "unknown error"
+          }. Finish setting it up from the event list instead of creating it again.`,
+          8,
+        );
+        setEventForm(INITIAL_EVENT_FORM);
+        setRounds([{ id: 1, name: "Qualifying Round", topN: "10", deadline: "" }]);
+        setSelectedTracks([]);
+        setCreateStep(1);
+        setView("list");
+        await refreshEvents();
+        return;
       }
-    });
+
+      message.success("Event created successfully.");
+      setEventForm(INITIAL_EVENT_FORM);
+      setRounds([{ id: 1, name: "Qualifying Round", topN: "10", deadline: "" }]);
+      setSelectedTracks([]);
+      setCreateStep(1);
+      setView("list");
+      await refreshEvents();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not create event.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleAdvanceRound = async (roundId: string) => {
-    Modal.confirm({
-      title: "Tiến vào Vòng thi Tiếp theo?",
-      content: "Hành động này sẽ khóa vòng thi này, tính điểm, loại các đội thi ngoài chỉ tiêu, và chuyển những đội còn lại vào vòng thi tiếp theo. Hành động này không thể hoàn tác.",
-      okText: "Đồng ý, Tiếp tục Đội thi",
-      okType: "danger",
-      onOk: async () => {
-        try {
-          message.loading({ content: "Đang tiến hành cho các đội thi đi tiếp...", key: "advance" });
-          const res = await apiRequest<any>(`/admin/rounds/${roundId}/advance`, { method: "POST" });
-          message.success({ content: `Đã thành công cho ${res.advancedTeams?.length || 0} đội thi đi tiếp và loại ${res.eliminatedTeams?.length || 0} đội thi.`, key: "advance", duration: 5 });
-          loadEvents();
-        } catch (err: any) {
-          message.error({ content: err.message || "Tiến hành vòng thi thất bại", key: "advance" });
-        }
-      }
-    });
-  };
-
+  /* ═══════════════════════════ RENDER ═══════════════════════════ */
   return (
     <div style={{ maxWidth: 900 }}>
+      {/* Page header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Cấu hình Sự kiện & Vòng thi</h1>
-          <p className="page-subtitle">Quản lý các giai đoạn hackathon, quy trình nhiều vòng thi, và hạn chót</p>
+          <h1 className="page-title">Event Management</h1>
+          <p className="page-subtitle">Create hackathon events and manage round pipelines</p>
         </div>
-        {!isEventEditing && (
-          <button className="btn btn-primary" onClick={handleAddNewEvent}>
-            <Plus size={16} /> Tạo Sự kiện Mới
-          </button>
-        )}
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          {view === "list" ? (
+            <>
+              <button className="btn btn-secondary" onClick={() => { void refreshEvents(); }} disabled={loading || saving}>
+                <RefreshCw size={16} /> Refresh
+              </button>
+              <button className="btn btn-primary" onClick={() => { setView("create"); setCreateStep(1); }}>
+                <Plus size={16} /> New Event
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-secondary" onClick={() => setView("list")}>
+              ← Back to Events
+            </button>
+          )}
+        </div>
       </div>
 
-      {isEventEditing && (
-        <div className="glass-card" style={{ marginBottom: "2rem" }}>
-          <h3 style={{ marginBottom: "1rem" }}>{editingEvent.eventId ? "Chỉnh sửa Sự kiện" : "Tạo Sự kiện Mới"}</h3>
-          <div className="form-group" style={{ marginBottom: "1rem" }}>
-            <label className="form-label">Tên Sự kiện</label>
-            <input 
-              className="form-input" 
-              placeholder="Tên Sự kiện (vd: Summer Hackathon 2026)" 
-              value={editingEvent.eventName} 
-              onChange={e => setEditingEvent({...editingEvent, eventName: e.target.value})} 
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: "1rem" }}>
-            <label className="form-label">Mô tả</label>
-            <textarea 
-              className="form-input" 
-              value={editingEvent.description} 
-              onChange={e => setEditingEvent({...editingEvent, description: e.target.value})} 
-            />
-          </div>
-          <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Ngày bắt đầu</label>
-              <input type="datetime-local" className="form-input" value={editingEvent.startDate} onChange={e => setEditingEvent({...editingEvent, startDate: e.target.value})} />
-            </div>
-            <div className="form-group" style={{ flex: 1 }}>
-              <label className="form-label">Ngày kết thúc</label>
-              <input type="datetime-local" className="form-input" value={editingEvent.endDate} onChange={e => setEditingEvent({...editingEvent, endDate: e.target.value})} />
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: "1rem" }}>
-            <label className="form-label">Quy mô Đội thi Tối đa</label>
-            <input type="number" min="1" className="form-input" value={editingEvent.maxTeamSize} onChange={e => setEditingEvent({...editingEvent, maxTeamSize: Number(e.target.value)})} />
-          </div>
-          
-          <div style={{ display: "flex", gap: "1rem" }}>
-            <button className="btn btn-primary" onClick={handleSaveEvent}><Save size={16} /> Lưu Thay đổi</button>
-            <button className="btn btn-ghost" onClick={() => setIsEventEditing(false)}>Hủy</button>
-          </div>
-        </div>
-      )}
-
-      {events.length > 0 && selectedEvent && !isEventEditing && (
+      {/* ─── LIST VIEW ─── */}
+      {view === "list" && (
         <div className="glass-card">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
-            <h3 style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <Calendar size={18} style={{ color: "var(--color-primary)" }} /> Thiết lập Quy trình Sự kiện
-            </h3>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button className="btn btn-icon btn-secondary" onClick={() => handleEditEvent(selectedEvent)}><Edit2 size={14}/></button>
-              <button className="btn btn-icon btn-danger" style={{ background: "transparent" }} onClick={() => handleDeleteEvent(selectedEvent.eventId)}><Trash2 size={14}/></button>
-            </div>
-          </div>
-          
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-            <div className="form-group">
-              <label className="form-label">Chọn Sự kiện Hoạt động</label>
-              <select className="form-select" value={selectedEventId} onChange={e => setSelectedEventId(e.target.value)} style={{ cursor: "pointer", fontWeight: "bold" }}>
-                {events.map(e => (
-                  <option key={e.eventId} value={e.eventId}>{e.eventName}</option>
-                ))}
-              </select>
-            </div>
+          <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Calendar size={18} style={{ color: "var(--color-primary)" }} /> Event Pipeline Configuration
+          </h3>
 
-            <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "1.5rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-                <h4 style={{ color: "var(--color-text)" }}>Giai đoạn / Vòng thi Sự kiện</h4>
-                {!isRoundEditing && (selectedEvent.rounds?.length || 0) < 5 && (
-                  <button className="btn btn-secondary btn-sm" onClick={handleAddRound}>
-                    <Plus size={14} /> Thêm Vòng thi
-                  </button>
-                )}
+          {events.length === 0 && !loading ? (
+            <div className="empty-state">
+              <Calendar size={48} className="empty-icon" />
+              <div className="empty-title">No events found</div>
+              <p style={{ color: "var(--color-text-3)", fontSize: "0.875rem", marginTop: "0.5rem" }}>
+                Click <strong>New Event</strong> to create your first hackathon event.
+              </p>
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              {/* Event selector */}
+              <div className="form-group">
+                <label className="form-label">Select Event</label>
+                <select
+                  className="form-input"
+                  value={selectedEventId}
+                  onChange={(e) => setSelectedEventId(e.target.value)}
+                  disabled={loading || saving}
+                  style={{ cursor: "pointer", fontWeight: "bold" }}
+                >
+                  {events.map((ev) => (
+                    <option key={ev.eventId} value={ev.eventId}>{ev.eventName}</option>
+                  ))}
+                </select>
               </div>
 
-              {isRoundEditing && (
-                <div className="glass-card" style={{ marginBottom: "1.5rem", background: "var(--color-surface-2)" }}>
-                  <h4 style={{ marginBottom: "1rem" }}>{editingRound.roundId ? "Chỉnh sửa Vòng thi" : "Thêm Vòng thi Mới"}</h4>
-                  <div className="form-group" style={{ marginBottom: "1rem" }}>
-                    <label className="form-label">Tên Vòng thi</label>
-                    <input className="form-input" value={editingRound.roundName} onChange={e => setEditingRound({...editingRound, roundName: e.target.value})} />
-                  </div>
-                  <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Số thứ tự</label>
-                      <input type="number" min="1" max="5" className="form-input" value={editingRound.roundOrder} disabled style={{ backgroundColor: "var(--color-surface)", cursor: "not-allowed", opacity: 0.7 }} />
+              {/* Selected event rounds */}
+              {selectedEvent && (
+                <div style={{ borderTop: "1px solid var(--color-border)", paddingTop: "1.5rem" }}>
+                  {/* Event info */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+                    <div>
+                      <h4 style={{ color: "var(--color-text)", marginBottom: "0.2rem" }}>{selectedEvent.eventName}</h4>
+                      <span style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>
+                        {toDisplayDate(selectedEvent.startDate)} → {toDisplayDate(selectedEvent.endDate)}
+                      </span>
                     </div>
-                    <div className="form-group" style={{ flex: 1 }}>
-                      <label className="form-label">Chỉ tiêu Đội thi Đi tiếp</label>
-                      <input type="number" min="1" max="500" className="form-input" value={editingRound.maxTeamsAdvancing} onChange={e => setEditingRound({...editingRound, maxTeamsAdvancing: Number(e.target.value)})} />
+                    <span className="badge badge-primary">{selectedEvent.status}</span>
+                  </div>
+
+                  <h4 style={{ marginBottom: "1rem", color: "var(--color-text)" }}>Event Stages / Rounds</h4>
+
+                  {selectedEvent.rounds.length === 0 && (
+                    <div className="empty-state">
+                      <Clock size={40} className="empty-icon" />
+                      <div className="empty-title">No rounds configured</div>
                     </div>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: "1rem" }}>
-                    <label className="form-label">Hạn chót Nộp bài</label>
-                    <input type="datetime-local" className="form-input" value={editingRound.submissionDeadline} onChange={e => setEditingRound({...editingRound, submissionDeadline: e.target.value})} />
-                  </div>
-                  <div style={{ display: "flex", gap: "1rem" }}>
-                    <button className="btn btn-primary" onClick={handleSaveRound}><Save size={14}/> Lưu Thay đổi</button>
-                    <button className="btn btn-ghost" onClick={() => setIsRoundEditing(false)}>Hủy</button>
+                  )}
+
+                  {selectedEvent.rounds.map((round, index) => (
+                    <div
+                      key={round.roundId}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "1rem",
+                        marginBottom: "1rem", background: "var(--color-surface-2)",
+                        padding: "1rem", borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--color-border-2)",
+                      }}
+                    >
+                      <div style={{ flex: 1 }}>
+                        <label className="form-label" style={{ marginBottom: "0.3rem" }}>Round {index + 1} Name</label>
+                        <input className="form-input" value={round.roundName} disabled style={{ opacity: 0.8 }} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label className="form-label" style={{ marginBottom: "0.3rem" }}>Submission Deadline</label>
+                        <div style={{ position: "relative" }}>
+                          <Clock size={16} style={{ position: "absolute", left: "0.8rem", top: "50%", transform: "translateY(-50%)", color: "var(--color-text-3)" }} />
+                          <input
+                            type="datetime-local"
+                            className="form-input"
+                            style={{ paddingLeft: "2.2rem" }}
+                            value={draftDeadlines[round.roundId] ?? ""}
+                            onChange={(e) => setDraftDeadlines((cur) => ({ ...cur, [round.roundId]: e.target.value }))}
+                            disabled={saving}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={{ fontSize: "0.85rem", color: "var(--color-text-3)", marginTop: "0.5rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <AlertCircle size={14} style={{ color: "var(--color-warning)" }} />
+                    Teams will be locked out of submissions past these deadlines.
                   </div>
                 </div>
               )}
-              
+
+              {/* Save button */}
+              {selectedEvent && (
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button className="btn btn-primary" onClick={handleSave} disabled={saving || loading} style={{ padding: "0.7rem 2rem" }}>
+                    {saving ? <span className="spinner" /> : <><Save size={16} /> Save All Changes</>}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── CREATE VIEW ─── */}
+      {view === "create" && (
+        <div>
+          {/* Step tabs */}
+          <div className="tabs" style={{ marginBottom: "1.5rem" }}>
+            {["Basic Info", "Rounds", "Tracks"].map((s, i) => (
+              <button key={s} className={`tab-btn ${createStep === i + 1 ? "active" : ""}`} onClick={() => setCreateStep(i + 1)}>
+                {i + 1}. {s}
+              </button>
+            ))}
+          </div>
+
+          {/* Step 1 – Basic Info */}
+          {createStep === 1 && (
+            <div className="glass-card">
+              <h3 style={{ marginBottom: "1.5rem", fontSize: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Calendar size={18} style={{ color: "var(--color-primary)" }} /> Event Details
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
+                <div className="form-group">
+                  <label className="form-label">Event Name *</label>
+                  <input
+                    className="form-input"
+                    placeholder="SEAL Spring 2026"
+                    value={eventForm.eventName}
+                    onChange={(e) => setEventForm({ ...eventForm, eventName: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    placeholder="Describe the hackathon theme and goals…"
+                    value={eventForm.description}
+                    onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })}
+                  />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                  <div className="form-group">
+                    <label className="form-label">Start Date *</label>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={eventForm.startDate}
+                      onChange={(e) => setEventForm({ ...eventForm, startDate: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">End Date *</label>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={eventForm.endDate}
+                      onChange={(e) => setEventForm({ ...eventForm, endDate: e.target.value })}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2 – Rounds */}
+          {createStep === 2 && (
+            <div className="glass-card">
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5rem" }}>
+                <h3 style={{ fontSize: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <Clock size={18} style={{ color: "var(--color-primary)" }} /> Competition Rounds
+                </h3>
+                <button className="btn btn-primary btn-sm" onClick={addRound}>
+                  <Plus size={14} /> Add Round
+                </button>
+              </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {(selectedEvent.rounds || []).sort((a:any, b:any) => a.roundOrder - b.roundOrder).map((round: any, index: number) => (
-                  <div key={round.roundId} style={{ display: "flex", alignItems: "center", gap: "1rem", background: "var(--color-surface-2)", padding: "1.25rem", borderRadius: "var(--radius-lg)", border: "1px solid var(--color-border-2)" }}>
-                    
-                    <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(99,102,241,0.1)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-primary)", fontWeight: "bold" }}>
-                      {round.roundOrder}
-                    </div>
-
-                    <div style={{ flex: 1 }}>
-                      <label className="form-label" style={{ marginBottom: "0.4rem" }}>Tên Vòng thi</label>
-                      <div style={{ fontWeight: "bold", color: "var(--color-text)" }}>{round.roundName}</div>
-                    </div>
-                    
-                    <div style={{ flex: 1 }}>
-                      <label className="form-label" style={{ marginBottom: "0.4rem" }}>Hạn chót Nộp bài</label>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                        <Clock size={14} style={{ color: "var(--color-text-3)" }} />
-                        <span style={{ color: "var(--color-text-2)" }}>{new Date(round.submissionDeadline).toLocaleString()}</span>
+                {rounds.map((r, i) => (
+                  <div key={r.id} style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "1.25rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
+                      <GripVertical size={16} style={{ color: "var(--color-text-3)" }} />
+                      <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-primary)", background: "rgba(99,102,241,0.1)", padding: "0.15rem 0.5rem", borderRadius: "var(--radius-sm)" }}>
+                        Round {i + 1}
+                      </span>
+                      <div className="form-group" style={{ flex: 1, gap: 0 }}>
+                        <input
+                          className="form-input"
+                          style={{ padding: "0.4rem 0.75rem" }}
+                          placeholder="Round name"
+                          value={r.name}
+                          onChange={(e) => setRounds(rounds.map((x) => x.id === r.id ? { ...x, name: e.target.value } : x))}
+                        />
                       </div>
+                      {rounds.length > 1 && (
+                        <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeRound(r.id)}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
-
-                    <div style={{ flex: 1 }}>
-                       <label className="form-label" style={{ marginBottom: "0.4rem" }}>Chỉ tiêu Đi tiếp</label>
-                       <div style={{ color: "var(--color-text-2)" }}>Top {round.maxTeamsAdvancing} Đội thi</div>
-                    </div>
-
-                    <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: "0.5rem", alignItems: "center" }}>
-                       <div style={{ display: "flex", gap: "0.5rem" }}>
-                         <button className="btn btn-sm btn-primary" onClick={() => handleAdvanceRound(round.roundId)}>
-                           <Play size={14} /> Tiếp tục Đội thi
-                         </button>
-                         <button className="btn btn-icon btn-secondary" onClick={() => handleEditRound(round)}>
-                           <Edit2 size={14} />
-                         </button>
-                         <button className="btn btn-icon btn-danger" style={{ background: "transparent", color: "var(--color-rose)" }} onClick={() => handleDeleteRound(round.roundId)}>
-                           <Trash2 size={14} />
-                         </button>
-                       </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                      <div className="form-group">
+                        <label className="form-label"><Target size={11} /> Top N Teams to Advance</label>
+                        <input
+                          className="form-input"
+                          type="number"
+                          placeholder="10"
+                          value={r.topN}
+                          onChange={(e) => setRounds(rounds.map((x) => x.id === r.id ? { ...x, topN: e.target.value } : x))}
+                        />
+                        <span className="form-hint">Top {r.topN || "?"} teams advance to next round</span>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label"><Clock size={11} /> Submission Deadline *</label>
+                        <input
+                          className="form-input"
+                          type="date"
+                          value={r.deadline}
+                          onChange={(e) => setRounds(rounds.map((x) => x.id === r.id ? { ...x, deadline: e.target.value } : x))}
+                        />
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <div style={{ fontSize: "0.85rem", color: "var(--color-text-3)", marginTop: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem", padding: "1rem", background: "rgba(245,158,11,0.05)", borderRadius: "var(--radius-md)", border: "1px solid rgba(245,158,11,0.2)" }}>
-                <AlertCircle size={16} style={{ color: "var(--color-warning)" }} /> Tiến hành cho các đội thi đi tiếp sẽ tính điểm vĩnh viễn cho vòng thi này và chuyển những đội thắng cuộc vào vòng thi tiếp theo dựa trên chỉ tiêu của bạn.
-              </div>
             </div>
+          )}
+
+          {/* Step 3 – Tracks */}
+          {createStep === 3 && (
+            <div className="glass-card">
+              <h3 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>Competition Tracks</h3>
+              <p style={{ fontSize: "0.875rem", color: "var(--color-text-2)", marginBottom: "1.5rem" }}>
+                Select the tracks for this hackathon (optional)
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                {TRACKS_OPTIONS.map((t) => (
+                  <label
+                    key={t}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.75rem",
+                      padding: "0.9rem 1rem", cursor: "pointer", transition: "all 0.15s",
+                      background: selectedTracks.includes(t) ? "rgba(99,102,241,0.08)" : "var(--color-surface-2)",
+                      border: `1px solid ${selectedTracks.includes(t) ? "rgba(99,102,241,0.4)" : "var(--color-border-2)"}`,
+                      borderRadius: "var(--radius-md)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedTracks.includes(t)}
+                      onChange={() => toggleTrack(t)}
+                      style={{ accentColor: "var(--color-primary)", width: 16, height: 16 }}
+                    />
+                    <span style={{ fontWeight: 500 }}>{t}</span>
+                    {selectedTracks.includes(t) && (
+                      <span className="badge badge-primary" style={{ marginLeft: "auto" }}>Selected</span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              {selectedTracks.length > 0 && (
+                <p style={{ marginTop: "1rem", fontSize: "0.82rem", color: "var(--color-text-3)" }}>
+                  {selectedTracks.length} track{selectedTracks.length > 1 ? "s" : ""} selected
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Navigation buttons */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "1.5rem" }}>
+            {createStep > 1 && (
+              <button className="btn btn-secondary" onClick={() => setCreateStep(createStep - 1)}>
+                ← Back
+              </button>
+            )}
+            {createStep < 3 ? (
+              <button className="btn btn-primary" onClick={() => setCreateStep(createStep + 1)}>
+                Continue <ChevronRight size={16} />
+              </button>
+            ) : (
+              <button className="btn btn-primary" disabled={submitting} onClick={handleCreateEvent}>
+                {submitting ? <span className="spinner" /> : <><Calendar size={16} /> Create Event</>}
+              </button>
+            )}
           </div>
         </div>
       )}

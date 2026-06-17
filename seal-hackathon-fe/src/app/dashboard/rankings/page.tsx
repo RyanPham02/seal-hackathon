@@ -1,163 +1,237 @@
-"use client";
-import { useEffect,  useState } from "react";
-import { Trophy, Medal, Award, Download, Filter, TrendingUp, Crown } from "lucide-react";
-
+﻿"use client";
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useEffect, useMemo, useState } from "react";
+import { Trophy, Medal, Award, Download, Crown, RefreshCw } from "lucide-react";
+import { App } from "antd";
 import { apiRequest } from "@/lib/api";
+
+type EventDto = {
+  eventId: string;
+  eventName: string;
+  categories: {
+    categoryId: string;
+    categoryName: string;
+  }[];
+  rounds: {
+    roundId: string;
+    roundName: string;
+    roundOrder: number;
+  }[];
+};
+
+type RankingDto = {
+  rank: number;
+  submissionId: string;
+  teamId: string;
+  teamName: string;
+  categoryName?: string;
+  totalScore: number;
+  submittedAt: string;
+};
 
 const RANK_ICON: Record<number, React.ReactNode> = {
   1: <Trophy size={16} style={{ color: "#f59e0b" }} />,
-  2: <Medal  size={16} style={{ color: "#94a3b8" }} />,
-  3: <Award  size={16} style={{ color: "#b45309" }} />,
-};
-
-const STATUS_BADGE: Record<string, string> = {
-  finalist:   "badge-warning",
-  advancing:  "badge-success",
-  eliminated: "badge-danger",
+  2: <Medal size={16} style={{ color: "#94a3b8" }} />,
+  3: <Award size={16} style={{ color: "#b45309" }} />,
 };
 
 export default function RankingsPage() {
-  const [trackFilter, setTrackFilter] = useState("All");
-  const [rankings, setRankings] = useState<any[]>([]);
-  const [tracks, setTracks] = useState<string[]>(["All"]);
+  const { message } = App.useApp();
+  const [events, setEvents] = useState<EventDto[]>([]);
+  const [eventId, setEventId] = useState("");
+  const [roundId, setRoundId] = useState("");
+  const [categoryId, setCategoryId] = useState("all");
+  const [rankings, setRankings] = useState<RankingDto[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchRankings = async () => {
-      try {
-        const events = await apiRequest<any[]>("/Events");
-        if (events.length > 0) {
-          const eventDetails = await apiRequest<any>(`/Events/${events[0].eventId}`);
-          if (eventDetails.rounds && eventDetails.rounds.length > 0) {
-            const firstRound = eventDetails.rounds[0].roundId;
-            const data = await apiRequest<any[]>(`/ranking/round/${firstRound}`);
-            
-            // Map the API data
-            const mapped = data.map((d: any) => ({
-              rank: d.rank,
-              team: d.teamName,
-              track: d.categoryName,
-              score: Math.round(d.totalScore * 10) / 10,
-              judges: d.judgesCount || 0,
-              status: d.rank <= 3 ? "advancing" : "eliminated"
-            }));
-            
-            setRankings(mapped);
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.eventId === eventId) ?? null,
+    [events, eventId],
+  );
 
-            const uniqueTracks = Array.from(new Set(mapped.map(m => m.track)));
-            setTracks(["All", ...(uniqueTracks as string[])]);
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
+  const loadEvents = async () => {
+    setLoading(true);
+    try {
+      const data = await apiRequest<EventDto[]>("/Events");
+      setEvents(data);
+      const firstEvent = data[0];
+      if (!eventId) {
+        setEventId(firstEvent?.eventId || "");
+        setRoundId(firstEvent?.rounds?.[0]?.roundId || "");
       }
-    };
-    fetchRankings();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not load events.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRankings = async () => {
+    if (!roundId) {
+      setRankings([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const path =
+        categoryId === "all"
+          ? `/ranking/round/${roundId}`
+          : `/ranking/category/${categoryId}/round/${roundId}`;
+      setRankings(await apiRequest<RankingDto[]>(path));
+    } catch (err) {
+      setRankings([]);
+      message.error(err instanceof Error ? err.message : "Could not load rankings.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadEvents();
   }, []);
 
-  const filtered = rankings.filter(r => trackFilter === "All" ? true : r.track === trackFilter);
+  const handleEventChange = (nextEventId: string) => {
+    const nextEvent = events.find((event) => event.eventId === nextEventId);
+    setEventId(nextEventId);
+    setRoundId(nextEvent?.rounds[0]?.roundId || "");
+    setCategoryId("all");
+  };
 
-  const exportRankingsCSV = () => {
-    const header = "Rank,Team,Track,Score,Judges,Status\n";
-    const rows = filtered.map(r => `${r.rank},${r.team},${r.track},${r.score},${r.judges},${r.status}`).join("\n");
-    const csvContent = header + rows;
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  useEffect(() => {
+    void loadRankings();
+  }, [roundId, categoryId]);
+
+  // Prefix cells that spreadsheet apps would interpret as formulas (CSV injection).
+  const sanitizeCsvCell = (cell: string | number) => {
+    const value = String(cell);
+    return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  };
+
+  const exportCsv = () => {
+    const rows = [
+      ["Rank", "Team", "Category", "Score", "Submitted At"],
+      ...rankings.map((item) => [
+        item.rank,
+        item.teamName,
+        item.categoryName ?? "",
+        item.totalScore.toFixed(2),
+        item.submittedAt,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map((cell) => `"${sanitizeCsvCell(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    const link = document.createElement("a");
     link.href = url;
-    link.download = `leaderboard_${trackFilter.replace(/\s+/g, "_").toLowerCase()}.csv`;
+    link.download = "rankings.csv";
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  const topThree = rankings.slice(0, 3);
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Bảng xếp hạng</h1>
-          <p className="page-subtitle">SEAL Spring 2026 · Vòng loại</p>
+          <h1 className="page-title">Rankings & Leaderboard</h1>
+          <p className="page-subtitle">
+            {selectedEvent?.eventName ?? "Select an event"} {roundId ? "- Backend ranking" : ""}
+          </p>
         </div>
-        <button className="btn btn-secondary" onClick={exportRankingsCSV}><Download size={15} /> Xuất CSV</button>
-      </div>
-
-      {/* Top 3 Podium */}
-      {rankings.length >= 3 && (
-        <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", alignItems: "flex-end", justifyContent: "center" }}>
-          {/* 2nd */}
-          <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #94a3b8", paddingTop: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "center" }}><Crown size={32} style={{ color: "#94a3b8" }} /></div>
-            <div style={{ fontWeight: 700, marginTop: "0.5rem" }}>{rankings[1].team}</div>
-            <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{rankings[1].track}</div>
-            <div style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--font-display)", color: "#94a3b8", marginTop: "0.5rem" }}>
-              {rankings[1].score}
-            </div>
-          </div>
-          {/* 1st */}
-          <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #f59e0b", paddingTop: "2rem", transform: "translateY(-12px)", boxShadow: "0 0 30px rgba(245,158,11,0.2)" }}>
-            <div style={{ display: "flex", justifyContent: "center" }}><Crown size={42} style={{ color: "#f59e0b", filter: "drop-shadow(0 0 8px rgba(245,158,11,0.5))" }} /></div>
-            <div style={{ fontWeight: 800, fontSize: "1.1rem", marginTop: "0.5rem", background: "linear-gradient(135deg,#f59e0b,#fbbf24)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              {rankings[0].team}
-            </div>
-            <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{rankings[0].track}</div>
-            <div style={{ fontSize: "2.2rem", fontWeight: 800, fontFamily: "var(--font-display)", color: "#f59e0b", marginTop: "0.5rem" }}>
-              {rankings[0].score}
-            </div>
-          </div>
-          {/* 3rd */}
-          <div className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: "3px solid #b45309", paddingTop: "1.5rem" }}>
-            <div style={{ display: "flex", justifyContent: "center" }}><Crown size={32} style={{ color: "#b45309" }} /></div>
-            <div style={{ fontWeight: 700, marginTop: "0.5rem" }}>{rankings[2].team}</div>
-            <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{rankings[2].track}</div>
-            <div style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--font-display)", color: "#b45309", marginTop: "0.5rem" }}>
-              {rankings[2].score}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Track filter */}
-      <div className="tabs" style={{ marginBottom: "1.5rem" }}>
-        {tracks.map(t => (
-          <button key={t} className={`tab-btn ${trackFilter===t?"active":""}`} onClick={() => setTrackFilter(t)}>{t === "All" ? "Tất cả" : t}</button>
-        ))}
-      </div>
-
-      {/* Full Rankings Table */}
-      <div className="table-wrapper">
-        <table className="table">
-          <thead><tr>
-            <th>Hạng</th><th>Đội thi</th><th>Hạng mục</th><th>Điểm</th><th>Giám khảo</th><th>Mức điểm</th><th>Trạng thái</th>
-          </tr></thead>
-          <tbody>
-            {filtered.map(r => (
-              <tr key={r.rank}>
-                <td>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    {RANK_ICON[r.rank] || <span style={{ color: "var(--color-text-3)", fontWeight: 700 }}>#{r.rank}</span>}
-                    {r.rank <= 3 && <span style={{ fontWeight: 800, color: r.rank===1?"#f59e0b":r.rank===2?"#94a3b8":"#b45309" }}>#{r.rank}</span>}
-                  </div>
-                </td>
-                <td className="table-cell-primary">{r.team}</td>
-                <td><span className="badge badge-neutral">{r.track}</span></td>
-                <td>
-                  <span style={{ fontWeight: 800, fontSize: "1rem", fontFamily: "var(--font-display)", color: r.score >= 90 ? "#10b981" : r.score >= 80 ? "#f59e0b" : "#f43f5e" }}>
-                    {r.score}
-                  </span>
-                </td>
-                <td>{r.judges}</td>
-                <td style={{ minWidth: 120 }}>
-                  <div className="progress">
-                    <div className="progress-fill" style={{ width: `${r.score}%`, background: `linear-gradient(90deg, #6366f1, #8b5cf6)` }} />
-                  </div>
-                </td>
-                <td><span className={`badge ${STATUS_BADGE[r.status]}`}>{r.status === 'advancing' ? 'Đi tiếp' : r.status === 'eliminated' ? 'Đã loại' : r.status === 'finalist' ? 'Chung kết' : r.status}</span></td>
-              </tr>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <select className="form-input" style={{ width: 220 }} value={eventId} onChange={(event) => handleEventChange(event.target.value)} disabled={events.length === 0}>
+            {events.map((event) => (
+              <option key={event.eventId} value={event.eventId}>{event.eventName}</option>
             ))}
-          </tbody>
-        </table>
+          </select>
+          <select className="form-input" style={{ width: 180 }} value={roundId} onChange={(event) => setRoundId(event.target.value)} disabled={!selectedEvent?.rounds.length}>
+            {selectedEvent?.rounds.map((round) => (
+              <option key={round.roundId} value={round.roundId}>{round.roundName}</option>
+            ))}
+          </select>
+          <select className="form-input" style={{ width: 180 }} value={categoryId} onChange={(event) => setCategoryId(event.target.value)} disabled={!selectedEvent?.categories.length}>
+            <option value="all">All categories</option>
+            {selectedEvent?.categories.map((category) => (
+              <option key={category.categoryId} value={category.categoryId}>{category.categoryName}</option>
+            ))}
+          </select>
+          <button className="btn btn-secondary btn-icon" onClick={loadRankings} disabled={loading || !roundId}>
+            <RefreshCw size={15} />
+          </button>
+          <button className="btn btn-secondary" onClick={exportCsv} disabled={rankings.length === 0}>
+            <Download size={15} /> Export CSV
+          </button>
+        </div>
       </div>
+
+      {loading ? (
+        <div className="empty-state">
+          <span className="spinner" />
+          <div className="empty-title">Loading rankings</div>
+        </div>
+      ) : !roundId ? (
+        <div className="empty-state">
+          <Trophy size={48} className="empty-icon" />
+          <div className="empty-title">No round selected</div>
+          <div className="empty-desc">Create at least one round before viewing rankings.</div>
+        </div>
+      ) : rankings.length === 0 ? (
+        <div className="empty-state">
+          <Trophy size={48} className="empty-icon" />
+          <div className="empty-title">No ranking data</div>
+          <div className="empty-desc">Rankings appear after teams submit and judges score them.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: "1rem", marginBottom: "2rem", alignItems: "flex-end", justifyContent: "center" }}>
+            {topThree.map((item, index) => (
+              <div key={item.submissionId} className="glass-card" style={{ flex: 1, textAlign: "center", borderTop: `3px solid ${item.rank === 1 ? "#f59e0b" : item.rank === 2 ? "#94a3b8" : "#b45309"}`, paddingTop: index === 0 ? "2rem" : "1.5rem", transform: item.rank === 1 ? "translateY(-12px)" : undefined }}>
+                <div style={{ display: "flex", justifyContent: "center" }}><Crown size={item.rank === 1 ? 42 : 32} style={{ color: item.rank === 1 ? "#f59e0b" : item.rank === 2 ? "#94a3b8" : "#b45309" }} /></div>
+                <div style={{ fontWeight: 800, marginTop: "0.5rem" }}>{item.teamName}</div>
+                <div style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{item.categoryName ?? "Category"}</div>
+                <div style={{ fontSize: "1.8rem", fontWeight: 800, fontFamily: "var(--font-display)", color: item.rank === 1 ? "#f59e0b" : item.rank === 2 ? "#94a3b8" : "#b45309", marginTop: "0.5rem" }}>
+                  {item.totalScore.toFixed(2)}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="table-wrapper">
+            <table className="table">
+              <thead><tr>
+                <th>Rank</th><th>Team</th><th>Category</th><th>Score</th><th>Submitted</th><th>Score Bar</th>
+              </tr></thead>
+              <tbody>
+                {rankings.map(r => (
+                  <tr key={r.submissionId}>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                        {RANK_ICON[r.rank] || <span style={{ color: "var(--color-text-3)", fontWeight: 700 }}>#{r.rank}</span>}
+                        {r.rank <= 3 && <span style={{ fontWeight: 800, color: r.rank===1?"#f59e0b":r.rank===2?"#94a3b8":"#b45309" }}>#{r.rank}</span>}
+                      </div>
+                    </td>
+                    <td className="table-cell-primary">{r.teamName}</td>
+                    <td><span className="badge badge-neutral">{r.categoryName ?? "N/A"}</span></td>
+                    <td>
+                      <span style={{ fontWeight: 800, fontSize: "1rem", fontFamily: "var(--font-display)", color: r.totalScore >= 80 ? "#10b981" : r.totalScore >= 60 ? "#f59e0b" : "#f43f5e" }}>
+                        {r.totalScore.toFixed(2)}
+                      </span>
+                    </td>
+                    <td>{new Date(r.submittedAt).toLocaleString()}</td>
+                    <td style={{ minWidth: 120 }}>
+                      <div className="progress">
+                        <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(0, r.totalScore))}%`, background: "linear-gradient(90deg, #6366f1, #8b5cf6)" }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

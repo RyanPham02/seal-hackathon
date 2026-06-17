@@ -1,11 +1,8 @@
-﻿using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SEAL.NET.Data;
 using SEAL.NET.DTOs.Team;
-using SEAL.NET.Models.Entities;
-using SEAL.NET.Models.Enums;
+using SEAL.NET.Services.Common;
+using SEAL.NET.Services.Interfaces;
 using System.Security.Claims;
 
 namespace SEAL.NET.Controllers
@@ -15,279 +12,106 @@ namespace SEAL.NET.Controllers
     [Authorize]
     public class TeamsController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
-        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly ITeamService _teamService;
 
-        public TeamsController(
-            ApplicationDbContext context,
-            UserManager<ApplicationUser> userManager)
+        public TeamsController(ITeamService teamService)
         {
-            _context = context;
-            _userManager = userManager;
+            _teamService = teamService;
         }
 
         private Guid GetCurrentUserId()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return Guid.Parse(userId!);
+            var raw = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return Guid.TryParse(raw, out var id) ? id : Guid.Empty;
         }
+
+        private bool IsPrivileged() =>
+            User.IsInRole("Admin") || User.IsInRole("Judge") || User.IsInRole("Mentor");
+
+        private IActionResult ToActionResult(ServiceResult result) => result.Outcome switch
+        {
+            ServiceOutcome.Ok => Ok(result.Body),
+            ServiceOutcome.BadRequest => BadRequest(result.Body),
+            ServiceOutcome.NotFound => NotFound(result.Body),
+            ServiceOutcome.Forbidden => Forbid(),
+            _ => StatusCode(500)
+        };
 
         [HttpPost]
         [Authorize(Roles = "Member,TeamLeader")]
         public async Task<IActionResult> CreateTeam([FromBody] CreateTeamRequest request)
-        {
-            var leaderId = GetCurrentUserId();
-
-            var leader = await _userManager.FindByIdAsync(leaderId.ToString());
-            if (leader == null)
-                return Unauthorized(new { message = "User not found." });
-
-            if (!leader.IsApproved)
-                return BadRequest(new { message = "Your account has not been approved yet." });
-
-            var category = await _context.Categories
-                .Include(c => c.Event)
-                .FirstOrDefaultAsync(c => c.CategoryId == request.CategoryId);
-
-            if (category == null)
-                return NotFound(new { message = "Category not found." });
-
-            var eventId = category.EventId;
-
-            var allMemberIds = request.MemberIds
-                .Append(leaderId)
-                .Distinct()
-                .ToList();
-
-            if (allMemberIds.Count < 3 || allMemberIds.Count > 5)
-                return BadRequest(new { message = "A team must have 3 to 5 members including the leader." });
-
-            var existingUsers = await _context.Users
-                .Where(u => allMemberIds.Contains(u.Id))
-                .Select(u => u.Id)
-                .ToListAsync();
-
-            if (existingUsers.Count != allMemberIds.Count)
-                return BadRequest(new { message = "One or more members do not exist." });
-
-            var unapprovedUsers = await _context.Users
-                .Where(u => allMemberIds.Contains(u.Id) && !u.IsApproved)
-                .Select(u => u.Email)
-                .ToListAsync();
-
-            if (unapprovedUsers.Any())
-                return BadRequest(new
-                {
-                    message = "One or more members have not been approved.",
-                    users = unapprovedUsers
-                });
-
-            var categoryIdsInSameEvent = await _context.Categories
-                .Where(c => c.EventId == eventId)
-                .Select(c => c.CategoryId)
-                .ToListAsync();
-
-            var alreadyJoined = await _context.TeamMembers
-                .Include(tm => tm.Team)
-                .Where(tm =>
-                    allMemberIds.Contains(tm.UserId) &&
-                    categoryIdsInSameEvent.Contains(tm.Team!.CategoryId))
-                .Select(tm => new
-                {
-                    tm.UserId,
-                    tm.User!.Email,
-                    tm.Team!.TeamName
-                })
-                .ToListAsync();
-
-            if (alreadyJoined.Any())
-                return BadRequest(new
-                {
-                    message = "One or more members already joined a team in this event.",
-                    users = alreadyJoined
-                });
-
-            var duplicateTeamName = await _context.Teams.AnyAsync(t =>
-                t.CategoryId == request.CategoryId &&
-                t.TeamName.ToLower() == request.TeamName.ToLower());
-
-            if (duplicateTeamName)
-                return BadRequest(new { message = "Team name already exists in this category." });
-
-            var firstRound = await _context.Rounds
-                .Where(r => r.EventId == eventId)
-                .OrderBy(r => r.RoundOrder)
-                .FirstOrDefaultAsync();
-
-            var team = new Team
-            {
-                TeamName = request.TeamName,
-                LeaderId = leaderId,
-                CategoryId = request.CategoryId,
-                CurrentRoundId = firstRound?.RoundId,
-                Status = TeamStatus.Pending
-            };
-
-            _context.Teams.Add(team);
-
-            foreach (var memberId in allMemberIds)
-            {
-                _context.TeamMembers.Add(new TeamMember
-                {
-                    TeamId = team.TeamId,
-                    UserId = memberId,
-                    Role = memberId == leaderId ? "Leader" : "Member"
-                });
-            }
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
-            {
-                message = "Team registered successfully and is waiting for approval.",
-                teamId = team.TeamId,
-                teamName = team.TeamName,
-                status = team.Status.ToString()
-            });
-        }
+            => ToActionResult(await _teamService.CreateTeamAsync(GetCurrentUserId(), request));
 
         [HttpGet("my-team")]
         public async Task<IActionResult> GetMyTeam()
-        {
-            var userId = GetCurrentUserId();
+            => ToActionResult(await _teamService.GetMyTeamAsync(GetCurrentUserId()));
 
-            var team = await _context.TeamMembers
-                .Where(tm => tm.UserId == userId)
-                .Include(tm => tm.Team!)
-                    .ThenInclude(t => t.Category)
-                .Include(tm => tm.Team!)
-                    .ThenInclude(t => t.CurrentRound)
-                .Include(tm => tm.Team!)
-                    .ThenInclude(t => t.Members)
-                        .ThenInclude(m => m.User)
-                .Select(tm => tm.Team)
-                .FirstOrDefaultAsync();
+        [HttpPost("my-team/members")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> AddMemberToMyTeam([FromBody] AddTeamMemberByStudentCodeRequest request)
+            => ToActionResult(await _teamService.AddMemberToMyTeamAsync(GetCurrentUserId(), request));
 
-            if (team == null)
-                return NotFound(new { message = "You have not joined any team yet." });
+        [HttpDelete("my-team/members/{studentCode}")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> RemoveMemberFromMyTeam(string studentCode)
+            => ToActionResult(await _teamService.RemoveMemberFromMyTeamAsync(GetCurrentUserId(), studentCode));
 
-            return Ok(new
-            {
-                team.TeamId,
-                team.TeamName,
-                status = team.Status.ToString(),
-                leaderId = team.LeaderId,
-                category = new
-                {
-                    team.Category!.CategoryId,
-                    team.Category.CategoryName
-                },
-                currentRound = team.CurrentRound == null ? null : new
-                {
-                    team.CurrentRound.RoundId,
-                    team.CurrentRound.RoundName
-                },
-                members = team.Members.Select(m => new
-                {
-                    m.UserId,
-                    m.User!.FullName,
-                    m.User.Email
-                })
-            });
-        }
+        [HttpPost("my-team/members/{userId}/kick-request")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> CreateKickRequest(Guid userId, [FromBody] CreateKickRequestRequest request)
+            => ToActionResult(await _teamService.CreateKickRequestAsync(GetCurrentUserId(), userId, request));
+
+        [HttpPost("leave")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> LeaveTeam()
+            => ToActionResult(await _teamService.LeaveTeamAsync(GetCurrentUserId()));
+
+        [HttpPut("my-team")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> UpdateMyTeam([FromBody] UpdateMyTeamRequest request)
+            => ToActionResult(await _teamService.UpdateMyTeamAsync(GetCurrentUserId(), request));
+
+        [HttpPut("transfer-leader")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> TransferLeader([FromBody] TransferLeaderRequest request)
+            => ToActionResult(await _teamService.TransferLeaderAsync(GetCurrentUserId(), request));
 
         [HttpPost("{teamId}/members")]
         [Authorize(Roles = "Member,TeamLeader")]
         public async Task<IActionResult> AddMember(Guid teamId, [FromBody] AddTeamMemberRequest request)
-        {
-            var currentUserId = GetCurrentUserId();
-
-            var team = await _context.Teams
-                .Include(t => t.Members)
-                .Include(t => t.Category)
-                .FirstOrDefaultAsync(t => t.TeamId == teamId);
-
-            if (team == null)
-                return NotFound(new { message = "Team not found." });
-
-            if (team.LeaderId != currentUserId)
-                return Forbid();
-
-            if (team.Status != TeamStatus.Pending)
-                return BadRequest(new { message = "Cannot modify members after team approval." });
-
-            if (team.Members.Count >= 5)
-                return BadRequest(new { message = "A team can have maximum 5 members." });
-
-            var user = await _userManager.FindByIdAsync(request.UserId.ToString());
-            if (user == null)
-                return NotFound(new { message = "User not found." });
-
-            if (!user.IsApproved)
-                return BadRequest(new { message = "This user has not been approved yet." });
-
-            var alreadyInTeam = team.Members.Any(m => m.UserId == request.UserId);
-            if (alreadyInTeam)
-                return BadRequest(new { message = "User is already in this team." });
-
-            var eventId = team.Category!.EventId;
-
-            var categoryIdsInSameEvent = await _context.Categories
-                .Where(c => c.EventId == eventId)
-                .Select(c => c.CategoryId)
-                .ToListAsync();
-
-            var alreadyJoinedEvent = await _context.TeamMembers
-                .Include(tm => tm.Team)
-                .AnyAsync(tm =>
-                    tm.UserId == request.UserId &&
-                    categoryIdsInSameEvent.Contains(tm.Team!.CategoryId));
-
-            if (alreadyJoinedEvent)
-                return BadRequest(new { message = "User already joined another team in this event." });
-
-            _context.TeamMembers.Add(new TeamMember
-            {
-                TeamId = team.TeamId,
-                UserId = request.UserId,
-                Role = "Member"
-            });
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Member added successfully." });
-        }
+            => ToActionResult(await _teamService.AddMemberAsync(GetCurrentUserId(), teamId, request));
 
         [HttpDelete("{teamId}/members/{userId}")]
         [Authorize(Roles = "Member,TeamLeader")]
         public async Task<IActionResult> RemoveMember(Guid teamId, Guid userId)
-        {
-            var currentUserId = GetCurrentUserId();
+            => ToActionResult(await _teamService.RemoveMemberAsync(GetCurrentUserId(), teamId, userId));
 
-            var team = await _context.Teams
-                .Include(t => t.Members)
-                .FirstOrDefaultAsync(t => t.TeamId == teamId);
+        [HttpGet("mentors")]
+        public async Task<IActionResult> GetMentors()
+            => ToActionResult(await _teamService.GetMentorsAsync());
 
-            if (team == null)
-                return NotFound(new { message = "Team not found." });
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetTeamById(Guid id)
+            => ToActionResult(await _teamService.GetTeamByIdAsync(GetCurrentUserId(), id, IsPrivileged()));
 
-            if (team.LeaderId != currentUserId)
-                return Forbid();
+        [HttpPost("my-team/mentor")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> AssignMentorToMyTeam([FromBody] ChooseMentorRequest request)
+            => ToActionResult(await _teamService.AssignMentorToMyTeamAsync(GetCurrentUserId(), request));
 
-            if (team.Status != TeamStatus.Pending)
-                return BadRequest(new { message = "Cannot modify members after team approval." });
+        [HttpDelete("my-team/mentor")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> RemoveMentorFromMyTeam()
+            => ToActionResult(await _teamService.RemoveMentorFromMyTeamAsync(GetCurrentUserId()));
 
-            if (team.LeaderId == userId)
-                return BadRequest(new { message = "Leader cannot be removed from the team." });
+        [HttpGet("recruiting")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> GetRecruitingTeams()
+            => ToActionResult(await _teamService.GetRecruitingTeamsAsync(GetCurrentUserId()));
 
-            var member = team.Members.FirstOrDefault(m => m.UserId == userId);
-            if (member == null)
-                return NotFound(new { message = "Member not found in this team." });
-
-            _context.TeamMembers.Remove(member);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Member removed successfully." });
-        }
+        [HttpPost("{teamId}/join-request")]
+        [Authorize(Roles = "Member,TeamLeader")]
+        public async Task<IActionResult> RequestToJoinTeam(Guid teamId)
+            => ToActionResult(await _teamService.RequestToJoinTeamAsync(GetCurrentUserId(), teamId));
     }
 }

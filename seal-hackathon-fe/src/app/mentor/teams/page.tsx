@@ -1,173 +1,192 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Users, FileEdit, MessageSquare, Check, X, BellRing } from "lucide-react";
-import { App, Modal, Input } from "antd";
-
+import React, { useState, useEffect, useCallback } from "react";
+import { Users, FileEdit, MessageSquare, Clipboard } from "lucide-react";
+import { App, Modal, Input, Spin, Empty, Tag } from "antd";
 import { apiRequest } from "@/lib/api";
+
+interface SubmissionData {
+  submissionId: string;
+  repositoryUrl?: string | null;
+  demoUrl?: string | null;
+  slideUrl?: string | null;
+  submittedAt: string;
+  roundName: string;
+}
+
+interface MentorTeam {
+  teamId: string;
+  teamName: string;
+  categoryName: string;
+  eventName: string;
+  status: string;
+  membersCount: number;
+  notes?: string | null;
+  latestSubmission?: SubmissionData | null;
+}
 
 export default function MentorTeamsPage() {
   const { message } = App.useApp();
-  const [teams, setTeams] = useState<any[]>([]);
-  const [invitations, setInvitations] = useState<any[]>([]);
+  const [teams, setTeams] = useState<MentorTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [reviewModal, setReviewModal] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<any>(null);
+  const [selectedTeam, setSelectedTeam] = useState<MentorTeam | null>(null);
   const [note, setNote] = useState("");
-  const [notesDB, setNotesDB] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchTeamsAndInvitations = async () => {
+  const loadTeams = useCallback(async () => {
+    setLoading(true);
     try {
-      const [teamsData, invitesData] = await Promise.all([
-        apiRequest<any[]>("/teams/mentor"),
-        apiRequest<any[]>("/teams/invitations").catch(() => [])
-      ]);
-      setTeams(teamsData);
-      setInvitations(invitesData || []);
-    } catch (err: any) {
-      message.error("Lỗi khi tải dữ liệu đội thi");
+      const data = await apiRequest<MentorTeam[]>("/mentor/teams");
+      setTeams(data);
+    } catch {
+      message.error("Could not load assigned teams.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [message]);
 
   useEffect(() => {
-    fetchTeamsAndInvitations();
-  }, []);
+    const trigger = async () => {
+      await Promise.resolve();
+      void loadTeams();
+    };
+    void trigger();
+  }, [loadTeams]);
 
-  const handleAccept = async (inviteTeamId: string) => {
-    try {
-      message.loading({ content: "Đang xử lý...", key: "invite" });
-      await apiRequest(`/Matchmaking/available-teams/${inviteTeamId}/join`, { method: "POST" });
-      message.success({ content: "Đã đồng ý tham gia đội!", key: "invite" });
-      fetchTeamsAndInvitations();
-    } catch (err: any) {
-      message.error({ content: err.message || "Lỗi khi đồng ý gia nhập", key: "invite" });
-    }
-  };
-
-  const handleReject = async (inviteTeamId: string) => {
-    try {
-      message.loading({ content: "Đang xử lý...", key: "invite" });
-      await apiRequest(`/teams/invitations/${inviteTeamId}`, { method: "DELETE" });
-      message.success({ content: "Đã từ chối lời mời", key: "invite" });
-      fetchTeamsAndInvitations();
-    } catch (err: any) {
-      message.error({ content: err.message || "Lỗi khi từ chối", key: "invite" });
-    }
-  };
-
-  const openReview = (team: any) => {
+  const openReview = (team: MentorTeam) => {
     setSelectedTeam(team);
-    setNote(notesDB[team.id] || "");
+    setNote(team.notes || "");
     setReviewModal(true);
   };
 
-  const handleSaveNote = () => {
+  const handleSaveNote = async () => {
     if (!selectedTeam) return;
-    setNotesDB({ ...notesDB, [selectedTeam.id]: note });
-    setReviewModal(false);
-    message.success("Đã lưu ghi chú đánh giá thành công!");
+    setSubmitting(true);
+    try {
+      await apiRequest(`/mentor/teams/${selectedTeam.teamId}/notes`, {
+        method: "POST",
+        body: JSON.stringify({ notes: note })
+      });
+      message.success("Notes saved successfully!");
+      setReviewModal(false);
+      void loadTeams();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to save notes.");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <Spin size="large" />
+        <div className="empty-title">Loading teams...</div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">Đội thi & Lời mời</h1>
-          <p className="page-subtitle">Quản lý các đội thi bạn đang hướng dẫn và lời mời tham gia</p>
+          <h1 className="page-title">Assigned Teams</h1>
+          <p className="page-subtitle">View and evaluate the teams you are mentoring</p>
         </div>
       </div>
 
-      {invitations.length > 0 && (
-        <div className="glass-card" style={{ marginTop: "2rem", borderLeft: "4px solid #f59e0b" }}>
-          <h3 style={{ fontSize: "1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "8px" }}>
-            <BellRing size={18} style={{ color: "#f59e0b" }} /> 
-            Lời mời đang chờ ({invitations.length})
-          </h3>
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Tên Đội gửi mời</th>
-                  <th>Hạng mục</th>
-                  <th>Thời gian gửi</th>
-                  <th>Hành động</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invitations.map((inv) => (
-                  <tr key={inv.inviteTeamId}>
-                    <td className="table-cell-primary">{inv.teamName}</td>
-                    <td><span className="badge badge-neutral">{inv.track}</span></td>
-                    <td><span style={{ fontSize: "0.8rem", color: "var(--color-text-3)" }}>{new Date(inv.createdAt).toLocaleDateString("vi-VN")}</span></td>
-                    <td>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAccept(inv.inviteTeamId)}>
-                          <Check size={14} /> Đồng ý
-                        </button>
-                        <button className="btn btn-ghost danger btn-sm" onClick={() => handleReject(inv.inviteTeamId)}>
-                          <X size={14} /> Từ chối
-                        </button>
+      {teams.length === 0 ? (
+        <div className="glass-card" style={{ marginTop: "2rem", textAlign: "center", padding: "3rem 1rem" }}>
+          <Empty description="You have not been assigned to mentor any teams yet." />
+        </div>
+      ) : (
+        <div className="table-wrapper" style={{ marginTop: "2rem" }}>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Team Name</th>
+                <th>Track / Event</th>
+                <th>Members</th>
+                <th>Status</th>
+                <th>Submission Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {teams.map((t) => (
+                <tr key={t.teamId}>
+                  <td className="table-cell-primary">
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                      <div className="avatar-placeholder" style={{ width: 30, height: 30, fontSize: "0.72rem" }}>
+                        {t.teamName.substring(0, 2).toUpperCase()}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      {t.teamName}
+                    </div>
+                  </td>
+                  <td>
+                    <div>{t.categoryName}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-3)" }}>{t.eventName}</div>
+                  </td>
+                  <td>
+                    <span className="badge badge-neutral">
+                      <Users size={10} style={{ marginRight: 4 }} /> {t.membersCount}
+                    </span>
+                  </td>
+                  <td>
+                    <span className={`badge ${t.status === "Approved" ? "badge-success" : t.status === "Eliminated" ? "badge-danger" : "badge-warning"}`}>
+                      {t.status.toUpperCase()}
+                    </span>
+                  </td>
+                  <td>
+                    {t.latestSubmission ? (
+                      <div>
+                        <Tag color="cyan">Submitted ({t.latestSubmission.roundName})</Tag>
+                        <div style={{ fontSize: "0.72rem", color: "var(--color-text-3)", marginTop: 2 }}>
+                          {new Date(t.latestSubmission.submittedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ) : (
+                      <Tag color="default">No submissions</Tag>
+                    )}
+                  </td>
+                  <td>
+                    <button className="btn btn-secondary btn-sm" onClick={() => openReview(t)}>
+                      {t.notes ? (
+                        <>
+                          <MessageSquare size={13} style={{ marginRight: 4 }} />
+                          <span> Edit Note</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileEdit size={13} style={{ marginRight: 4 }} />
+                          <span> Add Note</span>
+                        </>
+                      )}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
-      <div className="table-wrapper" style={{ marginTop: "2rem" }}>
-        <h3 style={{ fontSize: "1rem", marginBottom: "1rem", marginLeft: "1rem", marginTop: "1rem" }}>Danh sách đội thi đang hướng dẫn</h3>
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Tên Đội thi</th>
-              <th>Hạng mục</th>
-              <th>Thành viên</th>
-              <th>Trạng thái</th>
-              <th>Hành động</th>
-            </tr>
-          </thead>
-          <tbody>
-            {teams.map((t) => (
-              <tr key={t.id}>
-                <td className="table-cell-primary">
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                    <div className="avatar-placeholder" style={{ width: 30, height: 30, fontSize: "0.72rem" }}>
-                      {t.name.substring(0,2).toUpperCase()}
-                    </div>
-                    {t.name}
-                  </div>
-                </td>
-                <td><span style={{ fontSize: "0.8rem" }}>{t.track}</span></td>
-                <td><span className="badge badge-neutral"><Users size={10} /> {t.members}</span></td>
-                <td><span className="badge badge-success">{t.status.toUpperCase()}</span></td>
-                <td>
-                  <button className="btn btn-secondary btn-sm" onClick={() => openReview(t)}>
-                    {notesDB[t.id] ? <MessageSquare size={13} /> : <FileEdit size={13} />}
-                    {notesDB[t.id] ? " Sửa Ghi chú" : " Thêm Ghi chú"}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
       <Modal
-        title={`Ghi chú đánh giá cho ${selectedTeam?.name}`}
+        title={`Review Notes for ${selectedTeam?.teamName}`}
         open={reviewModal}
         onCancel={() => setReviewModal(false)}
         onOk={handleSaveNote}
-        okText="Lưu Ghi chú"
+        confirmLoading={submitting}
+        okText="Save Notes"
       >
         <div style={{ marginBottom: "1rem" }}>
-          <p style={{ color: "var(--color-text-2)", marginBottom: "1rem" }}>Viết lời khuyên, phản hồi và ghi chú của bạn cho đội thi này.</p>
+          <p style={{ color: "var(--color-text-2)", marginBottom: "1rem" }}>
+            <Clipboard size={14} style={{ marginRight: 6, verticalAlign: 'middle', display: 'inline' }} />
+            Record your advice, comments, and guidance for this team.
+          </p>
           <Input.TextArea 
             rows={6} 
-            placeholder="Nhập ghi chú của bạn tại đây..." 
+            placeholder="Enter your notes here..."
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />

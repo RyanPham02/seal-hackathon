@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SEAL.NET.Models.Entities
@@ -14,6 +14,7 @@ namespace SEAL.NET.Models.Entities
         [Column(TypeName = "decimal(5,2)")]
         public decimal ScoreValue { get; set; }   
         public string? Comment { get; set; }
+        public bool IsLocked { get; set; } = false;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         [ForeignKey(nameof(SubmissionId))]

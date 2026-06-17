@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using System.ComponentModel.DataAnnotations;
 using SEAL.NET.Models.Enums;
 
@@ -20,6 +20,17 @@ namespace SEAL.NET.Models.Entities
 
         [MaxLength(150)]
         public string? SchoolName { get; set; }
+
+        [MaxLength(100)]
+        public string? PlainPassword { get; set; }
+
+        // Developer profile metadata (descriptive only — NOT an auth/Identity role).
+        public DeveloperRole? DeveloperRole { get; set; }
+
+        // Selected programming languages / technologies, stored as a canonical
+        // comma-separated string (see Helpers/DeveloperProfileOptions).
+        [MaxLength(500)]
+        public string? ProgrammingLanguages { get; set; }
 
         public ICollection<Team> LedTeams { get; set; } = new List<Team>();
         public ICollection<TeamMember> TeamMemberships { get; set; } = new List<TeamMember>();

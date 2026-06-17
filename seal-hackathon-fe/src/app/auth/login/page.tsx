@@ -1,55 +1,49 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { App } from "antd";
 import { ArrowRight, Code2, Eye, EyeOff, Lock, Mail, Trophy } from "lucide-react";
-import { apiRequest, saveAuthSession } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 import styles from "../auth.module.css";
+
+/**
+ * Returns a safe internal redirect target, or the role-based fallback when the
+ * requested redirect is missing or unsafe (external URL, protocol-relative,
+ * or otherwise malformed). This prevents open-redirect attacks via the
+ * `?redirect=` query param.
+ */
+function getSafeRedirect(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  // Must be an internal absolute path: starts with a single "/".
+  // Reject protocol-relative ("//host") and backslash ("/\\host") variants,
+  // and anything containing a scheme (e.g. "https:", "javascript:").
+  if (!value.startsWith("/")) return fallback;
+  if (value.startsWith("//") || value.startsWith("/\\")) return fallback;
+  if (value.includes(":")) return fallback;
+  return value;
+}
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect");
-  const switchEmail = searchParams.get("switch_email");
-  const isAddingAccount = searchParams.get("add_account") === "true";
   const { message } = App.useApp();
+  const { user, isLoading: authLoading, refresh } = useAuth();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ email: switchEmail || "", password: "", remember: false });
-  const [isReadOnly, setIsReadOnly] = useState(true); // Anti-autofill trick
+  const [form, setForm] = useState({ email: "", password: "", remember: false });
 
+  // If the user is already signed in (cookie still valid), bounce them out of
+  // the login page once the AuthProvider finishes its bootstrap check.
   useEffect(() => {
-    // We intentionally leave it as readOnly=true.
-    // It will only become false when the user explicitly triggers onFocus or onMouseDown.
-  }, []);
-
-  useEffect(() => {
-    // If user explicitly wants to switch or add account, don't auto-redirect
-    if (switchEmail || isAddingAccount) return;
-
-    const stored = (localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser"));
-    if (stored) {
-      if (redirectUrl) {
-        router.push(redirectUrl);
-        return;
-      }
-      try {
-        const user = JSON.parse(stored);
-        if (user.roles && user.roles.includes("Admin")) {
-          router.push("/admin");
-        } else if (user.roles && user.roles.includes("Mentor")) {
-          router.push("/mentor");
-        } else {
-          router.push("/dashboard");
-        }
-      } catch (e) {
-        router.push("/dashboard");
-      }
-    }
-  }, [router, redirectUrl, switchEmail, isAddingAccount]);
+    if (authLoading || !user) return;
+    const fallback = user.roles.includes("Admin") ? "/admin" : "/dashboard";
+    router.push(getSafeRedirect(redirectUrl, fallback));
+  }, [authLoading, user, router, redirectUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,29 +51,28 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const payload = await apiRequest<any>("/Auth/login", {
+      await apiRequest("/Auth/login", {
         method: "POST",
         body: JSON.stringify({
           email: form.email,
-          password: form.password
+          password: form.password,
+          remember: form.remember,
         }),
-        auth: false
       });
 
-      console.log("Login Successful:", payload);
-
-      const currentUser = saveAuthSession(payload, form.remember);
-      message.success("Đăng nhập thành công!");
-      
-      if (redirectUrl) {
-        router.push(redirectUrl);
-      } else {
-        if (currentUser.roles.includes("Admin")) router.push("/admin");
-        else if (currentUser.roles.includes("Mentor")) router.push("/mentor");
-        else router.push("/dashboard");
+      // Cookie is set; re-source identity from /Auth/me — never trust the
+      // login response shape as the source of truth for role gates.
+      const signedIn = await refresh();
+      if (!signedIn) {
+        setError("Signed in, but the server did not return a user. Try again.");
+        return;
       }
+
+      message.success("Logged in successfully!");
+      const fallback = signedIn.roles.includes("Admin") ? "/admin" : "/dashboard";
+      router.push(getSafeRedirect(redirectUrl, fallback));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể đăng nhập. Vui lòng thử lại.");
+      setError(err instanceof Error ? err.message : "Could not sign in. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -100,47 +93,38 @@ function LoginForm() {
               <span className={styles.logoText}>SEAL</span>
             </div>
 
-            <h1 className={styles.title}>Chào mừng trở lại</h1>
-            <p className={styles.subtitle}>Đăng nhập bằng tài khoản hệ thống SEAL</p>
+            <h1 className={styles.title}>Welcome back</h1>
+            <p className={styles.subtitle}>Sign in with your SEAL backend account</p>
 
-            <div className={styles.form} onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(e as any); }}>
+            <form onSubmit={handleSubmit} className={styles.form}>
               <div className="form-group">
-                <label className="form-label">Email</label>
+                <label className="form-label" htmlFor="email">Email</label>
                 <div className={styles.inputWrap}>
                   <Mail size={16} className={styles.inputIcon} />
                   <input
-                    type="text"
-                    name="random_email_str"
+                    id="email"
+                    type="email"
                     className={`form-input ${styles.inputWithIcon}`}
                     placeholder="you@fpt.edu.vn"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     required
-                    disabled={!!switchEmail}
-                    readOnly={isReadOnly}
-                    onFocus={() => setIsReadOnly(false)}
-                    style={switchEmail ? { background: "rgba(0,0,0,0.3)", color: "var(--color-text-3)", cursor: "not-allowed" } : {}}
-                    autoComplete="new-password"
-                    spellCheck="false"
                   />
                 </div>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Mật khẩu</label>
+                <label className="form-label" htmlFor="password">Password</label>
                 <div className={styles.inputWrap}>
                   <Lock size={16} className={styles.inputIcon} />
                   <input
+                    id="password"
                     type={showPass ? "text" : "password"}
-                    name={"p_" + Math.random().toString(36).substring(7)}
                     className={`form-input ${styles.inputWithIcon} ${styles.inputWithTrail}`}
                     placeholder="Password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     required
-                    readOnly={isReadOnly}
-                    onFocus={() => setIsReadOnly(false)}
-                    autoComplete="new-password"
                   />
                   <button type="button" className={styles.eyeBtn} onClick={() => setShowPass(!showPass)}>
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -156,9 +140,9 @@ function LoginForm() {
                     onChange={(e) => setForm({ ...form, remember: e.target.checked })}
                     style={{ accentColor: "var(--color-primary)" }}
                   />
-                  Nhớ mật khẩu
+                  Remember me
                 </label>
-                <Link href="/auth/forgot-password" className={styles.forgotLink}>Quên mật khẩu?</Link>
+                <Link href="/auth/forgot-password" className={styles.forgotLink}>Forgot password?</Link>
               </div>
 
               {error && (
@@ -167,13 +151,13 @@ function LoginForm() {
                 </div>
               )}
 
-              <button type="button" onClick={handleSubmit} className={`btn btn-primary btn-lg ${styles.submitBtn}`} disabled={loading}>
-                {loading ? <span className="spinner" /> : <><ArrowRight size={18} /> <span>Đăng nhập</span></>}
+              <button type="submit" className={`btn btn-primary btn-lg ${styles.submitBtn}`} disabled={loading}>
+                {loading ? <span className="spinner" /> : <><ArrowRight size={18} /> Sign In</>}
               </button>
-            </div>
+            </form>
 
             <p className={styles.switchRow}>
-              Chưa có tài khoản? <Link href="/auth/register" className={styles.switchLink}>Tạo tài khoản mới</Link>
+              Don&apos;t have an account? <Link href="/auth/register" className={styles.switchLink}>Create new account</Link>
             </p>
           </div>
         </div>
@@ -186,7 +170,7 @@ function LoginForm() {
             </div>
             <h1 className={styles.sloganTitle}>SEAL Hackathon</h1>
             <p className={styles.sloganDesc}>
-              Quản lý sự kiện, đội thi, bài nộp, chấm điểm và bảng xếp hạng từ một hệ thống kết nối.
+              Manage events, teams, submissions, judging, and rankings from one connected system.
             </p>
           </div>
         </div>
@@ -195,10 +179,9 @@ function LoginForm() {
   );
 }
 
-
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={{display: 'flex', justifyContent: 'center', padding: '50px'}}>Đang tải...</div>}>
+    <Suspense fallback={null}>
       <LoginForm />
     </Suspense>
   );

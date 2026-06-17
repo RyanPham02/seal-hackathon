@@ -1,96 +1,155 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Send, Bell, List } from "lucide-react";
+import { Send, Bell, List, RefreshCw, Users } from "lucide-react";
 import { App } from "antd";
 import { apiRequest } from "@/lib/api";
 
+type BroadcastHistory = {
+  broadcastId: string;
+  title: string;
+  message: string;
+  type: string;
+  createdAt: string;
+  recipientCount: number;
+};
+
 export default function AdminSystemNotifications() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [history, setHistory] = useState<any[]>([]);
+  const [notifType, setNotifType] = useState("info");
+  const [history, setHistory] = useState<BroadcastHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
 
-  const fetchNotifications = async () => {
+  const loadHistory = async () => {
+    setLoading(true);
     try {
-      const data = await apiRequest<any[]>("/SystemNotifications");
+      const data = await apiRequest<BroadcastHistory[]>("/notifications/broadcast-history");
       setHistory(data);
     } catch (err) {
-      console.error("Failed to fetch notifications", err);
+      message.error(err instanceof Error ? err.message : "Failed to load broadcast history.");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchNotifications();
-  }, []);
+    let active = true;
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await apiRequest("/SystemNotifications", {
-        method: "POST",
-        body: JSON.stringify({
-          title: title,
-          message: desc
-        })
+    apiRequest<BroadcastHistory[]>("/notifications/broadcast-history")
+      .then((data) => {
+        if (active) setHistory(data);
+      })
+      .catch((err) => {
+        if (!active) return;
+        message.error(err instanceof Error ? err.message : "Failed to load broadcast history.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
+
+    return () => { active = false; };
+  }, [message]);
+
+  const sendBroadcast = async () => {
+    setSending(true);
+    try {
+      const res = await apiRequest<{ message: string; recipientCount: number }>("/notifications/broadcast", {
+        method: "POST",
+        body: JSON.stringify({ title, message: desc, type: notifType }),
+      });
+      message.success(`${res.message} (${res.recipientCount} recipients)`);
       setTitle("");
       setDesc("");
-      message.success("Đã gửi thông báo hệ thống đến tất cả người dùng!");
-      fetchNotifications();
+      setNotifType("info");
+      window.dispatchEvent(new Event("storage"));
+      await loadHistory();
     } catch (err) {
-      message.error("Gửi thông báo thất bại.");
+      message.error(err instanceof Error ? err.message : "Failed to send broadcast.");
+    } finally {
+      setSending(false);
     }
   };
 
+  // Broadcasts reach every user instantly and cannot be unsent — confirm first.
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    modal.confirm({
+      title: "Broadcast to all users?",
+      content: `"${title}" will be delivered to every user immediately and cannot be recalled.`,
+      okText: "Broadcast",
+      onOk: sendBroadcast,
+    });
+  };
+
   return (
-    <div style={{ maxWidth: 1100, height: "calc(100vh - 100px)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div className="page-header" style={{ flexShrink: 0 }}>
+    <div style={{ maxWidth: 800 }}>
+      <div className="page-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h1 className="page-title">Thông báo hệ thống</h1>
-          <p className="page-subtitle">Gửi thông báo đến tất cả người dùng</p>
+          <h1 className="page-title">System Notifications</h1>
+          <p className="page-subtitle">Broadcast messages to all users</p>
         </div>
+        <button className="btn btn-secondary" onClick={loadHistory} disabled={loading}>
+          <RefreshCw size={15} /> Refresh
+        </button>
       </div>
 
-      <div style={{ overflowY: "auto", flex: 1, paddingRight: "0.5rem", paddingBottom: "2rem" }}>
-        <div className="glass-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)", gap: "1.5rem" }}>
-          <div className="glass-card">
-            <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-1)" }}>
-              <Send size={18} style={{ color: "var(--color-primary)" }} /> Gửi thông báo mới
-            </h3>
-            <form onSubmit={handleSend} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              <div className="form-group">
-                <label className="form-label" style={{ color: "var(--color-text-2)" }}>Tiêu đề thông báo</label>
-                <input className="form-input" required value={title} onChange={e => setTitle(e.target.value)} placeholder="vd: Bảo trì hệ thống" style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--color-border-1)" }} />
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ color: "var(--color-text-2)" }}>Nội dung thông báo</label>
-                <textarea className="form-input" required rows={4} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Nhập nội dung chi tiết..." style={{ background: "rgba(0,0,0,0.2)", border: "1px solid var(--color-border-1)", resize: "none" }} />
-              </div>
-              <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start", padding: "0.6rem 1.5rem" }}>
-                <Bell size={16} style={{ marginRight: 6 }} /> Phát thông báo
-              </button>
-            </form>
-          </div>
-
-          <div className="glass-card" style={{ display: "flex", flexDirection: "column" }}>
-            <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-1)", flexShrink: 0 }}>
-              <List size={18} style={{ color: "var(--color-primary)" }} /> Thông báo đã gửi gần đây
-            </h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem", overflowY: "auto", flex: 1, paddingRight: "0.5rem" }}>
-              {history.length === 0 ? (
-                <p style={{ color: "var(--color-text-3)", fontStyle: "italic" }}>Chưa có thông báo nào được gửi.</p>
-              ) : (
-                history.map(n => (
-                  <div key={n.id} style={{ padding: "1rem 1.25rem", background: "rgba(255,255,255,0.02)", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-1)" }}>
-                    <div style={{ fontWeight: 600, marginBottom: "0.35rem", color: "var(--color-text-1)" }}>{n.title}</div>
-                    <div style={{ fontSize: "0.9rem", color: "var(--color-text-2)", marginBottom: "0.75rem", lineHeight: 1.5 }}>{n.message}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--color-text-3)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                      <Bell size={10} /> Gửi lúc: {new Date(n.createdAt).toLocaleString()}
-                    </div>
-                  </div>
-                ))
-              )}
+      <div className="grid-2">
+        <div className="glass-card">
+          <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <Send size={18} style={{ color: "var(--color-primary)" }} /> Send New Alert
+          </h3>
+          <form onSubmit={handleSend} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <div className="form-group">
+              <label className="form-label">Notification Title</label>
+              <input className="form-input" required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. System Maintenance" />
             </div>
+            <div className="form-group">
+              <label className="form-label">Message Content</label>
+              <textarea className="form-input" required rows={4} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Enter details..." />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Type</label>
+              <select className="form-input" value={notifType} onChange={e => setNotifType(e.target.value)}>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="success">Success</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+            <button type="submit" className="btn btn-primary" style={{ alignSelf: "flex-start" }} disabled={sending}>
+              {sending ? <span className="spinner" /> : <><Bell size={16} /> Broadcast Notification</>}
+            </button>
+          </form>
+        </div>
+
+        <div className="glass-card">
+          <h3 style={{ marginBottom: "1.5rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <List size={18} style={{ color: "var(--color-primary)" }} /> Recent Broadcasts
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {loading ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--color-text-3)" }}>
+                <span className="spinner" /> Loading…
+              </div>
+            ) : history.length === 0 ? (
+              <p style={{ color: "var(--color-text-3)" }}>No notifications sent yet.</p>
+            ) : (
+              history.map(n => (
+                <div key={n.broadcastId} style={{ padding: "1rem", background: "var(--color-surface-2)", borderRadius: "var(--radius-md)", border: "1px solid var(--color-border)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.25rem" }}>
+                    <div style={{ fontWeight: 600 }}>{n.title}</div>
+                    <span className="badge badge-neutral" style={{ fontSize: "0.7rem" }}>{n.type}</span>
+                  </div>
+                  <div style={{ fontSize: "0.9rem", color: "var(--color-text-2)", marginBottom: "0.5rem" }}>{n.message}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--color-text-3)" }}>
+                    <span>Sent: {new Date(n.createdAt).toLocaleString()}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}><Users size={11} /> {n.recipientCount} recipients</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>

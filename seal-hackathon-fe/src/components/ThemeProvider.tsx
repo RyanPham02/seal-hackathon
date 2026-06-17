@@ -1,6 +1,6 @@
 "use client";
 import { ConfigProvider, theme, App } from "antd";
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect } from "react";
 
 interface ThemeContextType {
   isDarkMode: boolean;
@@ -13,27 +13,34 @@ export const ThemeContext = createContext<ThemeContextType>({
 });
 
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  // The inline themeBootstrap script in app/layout.tsx runs in the browser
+  // BEFORE React hydrates and sets data-theme="light" on <html> when the user
+  // has opted into light mode (saved choice or OS prefers-color-scheme).
+  // We read that attribute here so our initial state matches what the user
+  // already sees on the screen — no FOUC, no AntD-config flap.
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof document === "undefined") return true;
+    return document.documentElement.getAttribute("data-theme") !== "light";
+  });
 
+  // Keep the attribute in sync with state after the initial paint (e.g. when
+  // the user clicks the toggle).
   useEffect(() => {
-    // Read from localStorage on mount
-    const saved = localStorage.getItem("seal_theme");
-    if (saved === "light") {
-      setIsDarkMode(false);
-      document.documentElement.setAttribute("data-theme", "light");
-    } else {
+    if (isDarkMode) {
       document.documentElement.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", "light");
     }
-  }, []);
+  }, [isDarkMode]);
 
   const toggleTheme = () => {
     setIsDarkMode((prev) => {
       const next = !prev;
-      localStorage.setItem("seal_theme", next ? "dark" : "light");
-      if (next) {
-        document.documentElement.removeAttribute("data-theme");
-      } else {
-        document.documentElement.setAttribute("data-theme", "light");
+      try {
+        localStorage.setItem("seal_theme", next ? "dark" : "light");
+      } catch {
+        // Safari private mode / quota exceeded — runtime toggle still works,
+        // it just won't persist across reloads.
       }
       return next;
     });

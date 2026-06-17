@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity;
 using SEAL.NET.Models.Entities;
 
 namespace SEAL.NET.Data
@@ -46,6 +46,7 @@ namespace SEAL.NET.Data
                     UserName = adminEmail,
                     Email = adminEmail,
                     FullName = "System Admin",
+                    PlainPassword = adminPassword,
                     EmailConfirmed = true,
                     IsApproved = true
                 };
