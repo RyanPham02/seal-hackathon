@@ -69,6 +69,7 @@ export default function AdminEventsPage() {
   const [draftDeadlines, setDraftDeadlines] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [advancingId, setAdvancingId] = useState("");
 
   /* ── Create form ── */
   const [eventForm, setEventForm] = useState(INITIAL_EVENT_FORM);
@@ -151,6 +152,25 @@ export default function AdminEventsPage() {
       message.error(err instanceof Error ? err.message : "Could not update round deadlines.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAdvanceRound = async (roundId: string) => {
+    if (!window.confirm("Are you sure you want to advance this round? Teams with average score >= 40 will move to the next round, and others will be eliminated.")) {
+      return;
+    }
+    setAdvancingId(roundId);
+    try {
+      const res = await apiRequest<{ message: string }>(
+        `/admin/rounds/${roundId}/advance`,
+        { method: "POST" }
+      );
+      message.success(res.message || "Round advanced successfully.");
+      await refreshEvents();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not advance round.");
+    } finally {
+      setAdvancingId("");
     }
   };
 
@@ -344,10 +364,22 @@ export default function AdminEventsPage() {
                             style={{ paddingLeft: "2.2rem" }}
                             value={draftDeadlines[round.roundId] ?? ""}
                             onChange={(e) => setDraftDeadlines((cur) => ({ ...cur, [round.roundId]: e.target.value }))}
-                            disabled={saving}
+                            disabled={saving || advancingId !== ""}
                           />
                         </div>
                       </div>
+                      {index < selectedEvent.rounds.length - 1 && (
+                        <div style={{ alignSelf: "flex-end", marginBottom: "0.2rem" }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: "0.45rem 1rem", minWidth: 120 }}
+                            onClick={() => handleAdvanceRound(round.roundId)}
+                            disabled={advancingId !== "" || loading || saving}
+                          >
+                            {advancingId === round.roundId ? <span className="spinner" /> : "Advance Round"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
 
@@ -411,19 +443,19 @@ export default function AdminEventsPage() {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                   <div className="form-group">
-                    <label className="form-label">Start Date *</label>
+                    <label className="form-label">Start Date & Time *</label>
                     <input
                       className="form-input"
-                      type="date"
+                      type="datetime-local"
                       value={eventForm.startDate}
                       onChange={(e) => setEventForm({ ...eventForm, startDate: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">End Date *</label>
+                    <label className="form-label">End Date & Time *</label>
                     <input
                       className="form-input"
-                      type="date"
+                      type="datetime-local"
                       value={eventForm.endDate}
                       onChange={(e) => setEventForm({ ...eventForm, endDate: e.target.value })}
                     />
@@ -483,7 +515,7 @@ export default function AdminEventsPage() {
                         <label className="form-label"><Clock size={11} /> Submission Deadline *</label>
                         <input
                           className="form-input"
-                          type="date"
+                          type="datetime-local"
                           value={r.deadline}
                           onChange={(e) => setRounds(rounds.map((x) => x.id === r.id ? { ...x, deadline: e.target.value } : x))}
                         />

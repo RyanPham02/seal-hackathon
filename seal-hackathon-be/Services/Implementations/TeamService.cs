@@ -31,6 +31,7 @@ namespace SEAL.NET.Services.Implementations
                 .Where(tm => tm.UserId == userId)
                 .Include(tm => tm.Team!)
                     .ThenInclude(t => t.Category)
+                        .ThenInclude(c => c.Event)
                 .Include(tm => tm.Team!)
                     .ThenInclude(t => t.CurrentRound)
                 .Include(tm => tm.Team!)
@@ -299,12 +300,14 @@ namespace SEAL.NET.Services.Implementations
                 category = new
                 {
                     team.Category!.CategoryId,
-                    team.Category.CategoryName
+                    team.Category.CategoryName,
+                    eventName = team.Category.Event?.EventName
                 },
                 currentRound = team.CurrentRound == null ? null : new
                 {
                     team.CurrentRound.RoundId,
-                    team.CurrentRound.RoundName
+                    team.CurrentRound.RoundName,
+                    team.CurrentRound.SubmissionDeadline
                 },
                 members = team.Members.Select(m => new
                 {

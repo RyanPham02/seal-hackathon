@@ -173,53 +173,61 @@ namespace SEAL.NET.Services.Implementations
             if (nextRound == null)
                 return ServiceResult.BadRequest("This is the final round. No next round found.");
 
-            if (currentRound.MaxTeamsAdvancing <= 0)
-                return ServiceResult.BadRequest("MaxTeamsAdvancing must be greater than 0.");
-
-            var submissions = await _context.Submissions
-                .Include(s => s.Team)
-                    .ThenInclude(t => t.Category)
-                .Include(s => s.Team)
-                    .ThenInclude(t => t.Members)
-                .Include(s => s.Scores)
-                    .ThenInclude(sc => sc.Criteria)
-                .Where(s =>
-                    s.RoundId == roundId &&
-                    s.Team != null &&
-                    s.Team.Status == TeamStatus.Approved)
+            var teams = await _context.Teams
+                .Include(t => t.Category)
+                .Include(t => t.Members)
+                .Include(t => t.Submissions.Where(s => s.RoundId == roundId))
+                    .ThenInclude(s => s.Scores)
+                        .ThenInclude(sc => sc.Criteria)
+                .Where(t =>
+                    t.CurrentRoundId == roundId &&
+                    t.Status == TeamStatus.Approved)
                 .ToListAsync();
 
-            if (!submissions.Any())
-                return ServiceResult.BadRequest("No submissions found for this round.");
+            if (!teams.Any())
+                return ServiceResult.BadRequest("No active teams found for this round.");
 
-            var groupedByCategory = submissions
-                .GroupBy(s => s.Team!.CategoryId);
+            var groupedByCategory = teams
+                .GroupBy(t => t.CategoryId);
 
             var advancedTeams = new List<object>();
             var eliminatedTeams = new List<object>();
 
             foreach (var categoryGroup in groupedByCategory)
             {
-                var rankedSubmissions = categoryGroup
-                    .Select(s => new
-                    {
-                        Submission = s,
-                        Team = s.Team!,
-                        TotalScore = s.Scores.Sum(sc =>
-                            sc.Criteria == null || sc.Criteria.MaxScore == 0
-                                ? 0
-                                : (sc.ScoreValue / sc.Criteria.MaxScore) * sc.Criteria.Weight)
+                var rankedTeams = categoryGroup
+                    .Select(t => {
+                        var submission = t.Submissions.FirstOrDefault();
+                        decimal averageScore = 0;
+                        if (submission != null)
+                        {
+                            var judgeScores = submission.Scores
+                                .GroupBy(sc => sc.JudgeId)
+                                .Select(g => g.Sum(sc =>
+                                    sc.Criteria == null || sc.Criteria.MaxScore == 0
+                                        ? 0
+                                        : (sc.ScoreValue / sc.Criteria.MaxScore) * sc.Criteria.Weight))
+                                .ToList();
+                            
+                            averageScore = judgeScores.Any() ? judgeScores.Average() : 0m;
+                        }
+
+                        return new
+                        {
+                            Team = t,
+                            TotalScore = averageScore,
+                            Submitted = submission != null
+                        };
                     })
                     .OrderByDescending(x => x.TotalScore)
-                    .ThenBy(x => x.Submission.SubmittedAt)
                     .ToList();
 
-                var winners = rankedSubmissions
-                    .Take(currentRound.MaxTeamsAdvancing)
+                var winners = rankedTeams
+                    .Where(x => x.TotalScore >= 40m)
                     .ToList();
 
-                var losers = rankedSubmissions
-                    .Skip(currentRound.MaxTeamsAdvancing)
+                var losers = rankedTeams
+                    .Where(x => x.TotalScore < 40m)
                     .ToList();
 
                 foreach (var item in winners)
@@ -249,7 +257,9 @@ namespace SEAL.NET.Services.Implementations
                 foreach (var item in losers)
                 {
                     item.Team.Status = TeamStatus.Eliminated;
-                    item.Team.EliminationReason = "Eliminated after round ranking.";
+                    item.Team.EliminationReason = item.Submitted 
+                        ? "Eliminated because score was below 40." 
+                        : "Eliminated because no project was submitted.";
                     item.Team.EliminatedAt = DateTime.UtcNow;
 
                     eliminatedTeams.Add(new
@@ -263,10 +273,14 @@ namespace SEAL.NET.Services.Implementations
                     var memberIds = item.Team.Members.Select(m => m.UserId).ToList();
                     if (memberIds.Any())
                     {
+                        var reasonMsg = item.Submitted
+                            ? $"score was {item.TotalScore:F1} (minimum required: 40)"
+                            : "no project was submitted before the deadline";
+
                         await _notificationService.CreateForUsersAsync(
                             memberIds,
                             "Team eliminated",
-                            $"Team {item.Team.TeamName} was eliminated after round ranking of {currentRound.RoundName} with a score of {item.TotalScore:F1}.",
+                            $"Team {item.Team.TeamName} was eliminated after {currentRound.RoundName} because {reasonMsg}.",
                             "round_eliminate");
                     }
                 }
@@ -276,7 +290,7 @@ namespace SEAL.NET.Services.Implementations
 
             return ServiceResult.Ok(new
             {
-                message = "Round advanced successfully.",
+                message = "Round advanced successfully based on score threshold (>= 40).",
                 fromRound = new
                 {
                     currentRound.RoundId,

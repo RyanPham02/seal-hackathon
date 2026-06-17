@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
 import { Upload, Link as LinkIcon, GitBranch, Play, FileText, CheckCircle, AlertCircle, RefreshCw, Award, MessageSquare } from "lucide-react";
@@ -13,10 +13,12 @@ type TeamDto = {
   category: {
     categoryId: string;
     categoryName: string;
+    eventName?: string | null;
   };
   currentRound: {
     roundId: string;
     roundName: string;
+    submissionDeadline?: string | null;
   } | null;
 };
 
@@ -243,6 +245,48 @@ export default function SubmissionsPage() {
       )}
 
       <div className="glass-card">
+        {team?.currentRound && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "1.25rem",
+              background: "var(--color-surface-2)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              padding: "1.25rem",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Competition</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-text-1)", marginTop: "0.25rem" }}>
+                {team.category?.eventName || "SEAL Hackathon"}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Active Round</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-text-1)", marginTop: "0.25rem" }}>
+                {team.currentRound.roundName}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Submission Deadline</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
+                {team.currentRound.submissionDeadline
+                  ? new Intl.DateTimeFormat("en-US", {
+                      month: "short",
+                      day: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date(team.currentRound.submissionDeadline))
+                  : "No deadline set"}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem", marginBottom: "1.5rem" }}>
           <AlertCircle size={20} style={{ color: "var(--color-primary)", flexShrink: 0, marginTop: 2 }} />
           <div>

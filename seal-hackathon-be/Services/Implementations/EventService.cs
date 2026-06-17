@@ -1,7 +1,8 @@
-﻿using SEAL.NET.DTOs.Category;
+using SEAL.NET.DTOs.Category;
 using SEAL.NET.DTOs.Event;
 using SEAL.NET.DTOs.Round;
 using SEAL.NET.Models.Entities;
+using SEAL.NET.Models.Enums;
 using SEAL.NET.Repositories.Interfaces;
 using SEAL.NET.Services.Interfaces;
 
@@ -81,31 +82,41 @@ namespace SEAL.NET.Services.Implementations
             return (true, "Deleted successfully.");
         }
 
-        private static EventResponseDto MapToDto(Event e) => new()
+        private static EventResponseDto MapToDto(Event e)
         {
-            EventId = e.EventId,
-            EventName = e.EventName,
-            Description = e.Description,
-            StartDate = e.StartDate,
-            EndDate = e.EndDate,
-            Status = e.Status.ToString(),
-            Categories = e.Categories.Select(c => new CategoryDto
+            var now = DateTime.UtcNow;
+            var computedStatus = e.Status == EventStatus.Cancelled
+                ? EventStatus.Cancelled
+                : (now < e.StartDate
+                    ? EventStatus.Upcoming
+                    : (now <= e.EndDate ? EventStatus.Ongoing : EventStatus.Completed));
+
+            return new EventResponseDto
             {
-                CategoryId = c.CategoryId,
-                CategoryName = c.CategoryName,
-                Description = c.Description,
-                TeamCount = c.Teams.Count
-            }).ToList(),
-            Rounds = e.Rounds
-                .OrderBy(r => r.RoundOrder)
-                .Select(r => new RoundDto
+                EventId = e.EventId,
+                EventName = e.EventName,
+                Description = e.Description,
+                StartDate = e.StartDate,
+                EndDate = e.EndDate,
+                Status = computedStatus.ToString(),
+                Categories = e.Categories.Select(c => new CategoryDto
                 {
-                    RoundId = r.RoundId,
-                    RoundName = r.RoundName,
-                    RoundOrder = r.RoundOrder,
-                    MaxTeamsAdvancing = r.MaxTeamsAdvancing,
-                    SubmissionDeadline = r.SubmissionDeadline
-                }).ToList()
-        };
+                    CategoryId = c.CategoryId,
+                    CategoryName = c.CategoryName,
+                    Description = c.Description,
+                    TeamCount = c.Teams.Count
+                }).ToList(),
+                Rounds = e.Rounds
+                    .OrderBy(r => r.RoundOrder)
+                    .Select(r => new RoundDto
+                    {
+                        RoundId = r.RoundId,
+                        RoundName = r.RoundName,
+                        RoundOrder = r.RoundOrder,
+                        MaxTeamsAdvancing = r.MaxTeamsAdvancing,
+                        SubmissionDeadline = r.SubmissionDeadline
+                    }).ToList()
+            };
+        }
     }
 }
