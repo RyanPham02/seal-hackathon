@@ -35,7 +35,7 @@ if (builder.Environment.IsProduction() &&
 }
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseSqlite(connectionString));
 
 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
@@ -228,7 +228,7 @@ using (var scope = app.Services.CreateScope())
     if (app.Environment.IsDevelopment())
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        // await db.Database.MigrateAsync(); // Commented out to prevent conflict with existing database
+        await db.Database.EnsureCreatedAsync(); // Ensure schema is created for SQLite
     }
 
     await DbSeeder.SeedRolesAndAdminAsync(scope.ServiceProvider);

@@ -65,6 +65,20 @@ namespace SEAL.NET.Data
                     }
                 }
             }
+
+            var dbContext = serviceProvider.GetRequiredService<ApplicationDbContext>();
+            if (!dbContext.Events.Any())
+            {
+                var evt = new Event { EventId = Guid.NewGuid(), EventName = "SEAL Hackathon 2026", StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(7), Status = SEAL.NET.Models.Enums.EventStatus.Ongoing };
+                var cat = new Category { CategoryId = Guid.NewGuid(), CategoryName = "Software", Event = evt };
+                var round = new Round { RoundId = Guid.NewGuid(), RoundName = "Finals", Event = evt };
+                var crit = new Criteria { CriteriaId = Guid.NewGuid(), CriteriaName = "Functionality", MaxScore = 100, Weight = 100, Round = round };
+                dbContext.Events.Add(evt);
+                dbContext.Categories.Add(cat);
+                dbContext.Rounds.Add(round);
+                dbContext.Criteria.Add(crit);
+                await dbContext.SaveChangesAsync();
+            }
         }
     }
 }
