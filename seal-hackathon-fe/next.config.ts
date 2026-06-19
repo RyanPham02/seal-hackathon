@@ -8,8 +8,7 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "recharts"],
   },
   devIndicators: {
-    appIsrStatus: false,
-    buildActivityPosition: 'bottom-left',
+    position: 'bottom-left',
   },
   // Allow external connections for Next.js dev server on the local Wi-Fi
   allowedDevOrigins: ["172.20.10.2"],
