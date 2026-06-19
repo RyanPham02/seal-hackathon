@@ -1,0 +1,13 @@
+{
+  "topbar": {
+    "search_placeholder": "Tìm kiếm sự kiện, nhóm, tài liệu…",
+    "change_language": "Đổi ngôn ngữ",
+    "toggle_theme": "Đổi giao diện"
+  },
+  "menu": {
+    "home": "Trang chủ",
+    "dashboard": "Bảng điều khiển",
+    "settings": "Cài đặt",
+    "logout": "Đăng xuất"
+  }
+}

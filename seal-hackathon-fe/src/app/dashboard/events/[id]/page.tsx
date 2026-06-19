@@ -2,7 +2,7 @@
 import { use, useState, useEffect, useCallback } from "react";
 import { ChevronLeft, Users, Target, Clock, Trophy, Zap } from "lucide-react";
 import Link from "next/link";
-import { Modal, Select, Input, App } from "antd";
+import { App } from "antd";
 import { apiRequest } from "@/lib/api";
 
 interface RoundDto {
@@ -53,52 +53,18 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = useState("overview");
   const [event, setEvent] = useState<EventDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
-  const [regVisible, setRegVisible] = useState(false);
-  const [isRegistered, setIsRegistered] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [teamName, setTeamName] = useState("");
-  const [track, setTrack] = useState<string | undefined>(undefined);
 
   const fetchEvent = useCallback(() => (
     apiRequest<EventDetailDto>(`/Events/${id}`)
   ), [id]);
 
-  const loadEvent = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await fetchEvent();
-      setEvent(data);
-      try {
-        const myTeam = await apiRequest<{teamId: string}>("/Teams/my-team");
-        if (myTeam && myTeam.teamId) {
-          setIsRegistered(true);
-        }
-      } catch (teamErr) {
-        // User not in team
-      }
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Could not load event.");
-      setEvent(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchEvent, message]);
-
   useEffect(() => {
     let active = true;
 
     fetchEvent()
-      .then(async (data) => {
+      .then((data) => {
         if (active) {
           setEvent(data);
-          try {
-            const myTeam = await apiRequest<{teamId: string}>("/Teams/my-team");
-            if (myTeam && myTeam.teamId) {
-              setIsRegistered(true);
-            }
-          } catch (teamErr) {
-            // User not in team
-          }
         }
       })
       .catch((err) => {
@@ -117,26 +83,6 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
       active = false;
     };
   }, [fetchEvent, message]);
-
-  const handleRegister = async () => {
-    if (!teamName || !track) return;
-    setSubmitting(true);
-    try {
-      await apiRequest("/teams", {
-        method: "POST",
-        body: JSON.stringify({ teamName, categoryId: track }),
-      });
-      message.success("Successfully registered your team for this hackathon!");
-      setRegVisible(false);
-      setTeamName("");
-      setTrack(undefined);
-      loadEvent();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Could not register team.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   if (loading) {
     return <div className="empty-state"><Clock size={48} className="empty-icon" /><div className="empty-title">Loading event…</div></div>;
@@ -166,16 +112,13 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
           </div>
           <p className="page-subtitle">{event.description || "No description provided."}</p>
         </div>
-        {!isRegistered && (
-          <button className="btn btn-primary" onClick={() => setRegVisible(true)} disabled={event.categories.length === 0}>
-            <Users size={15} /> Register Now
+        {/* Team registration requires 2–4 teammates and approval; the Teams
+            page owns that validated flow rather than duplicating it here. */}
+        <Link href="/dashboard/teams">
+          <button className="btn btn-primary" disabled={event.categories.length === 0}>
+            <Users size={15} /> Register Your Team
           </button>
-        )}
-        {isRegistered && (
-          <button className="btn btn-secondary" disabled>
-            <Target size={15} /> Already Joined
-          </button>
-        )}
+        </Link>
       </div>
 
       {/* Quick Stats */}
@@ -289,31 +232,6 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
-      <Modal
-        title="Register for Hackathon"
-        open={regVisible}
-        onCancel={() => setRegVisible(false)}
-        onOk={handleRegister}
-        okText="Confirm Registration"
-        confirmLoading={submitting}
-        okButtonProps={{ disabled: !teamName || !track }}
-      >
-        <div style={{ marginBottom: "1rem", color: "var(--color-text-2)", fontSize: "0.9rem" }}>
-          Please create a team name and select a track to participate in this hackathon.
-        </div>
-        <div className="form-group" style={{ marginBottom: "1rem" }}>
-          <label className="form-label" style={{ marginBottom: "0.5rem", display: "block" }}>Team Name</label>
-          <Input placeholder="Enter your awesome team name" value={teamName} onChange={e => setTeamName(e.target.value)} size="large" />
-        </div>
-        <div className="form-group">
-          <label className="form-label" style={{ marginBottom: "0.5rem", display: "block" }}>Select Track</label>
-          <Select style={{ width: "100%" }} size="large" placeholder="Choose a competition track" value={track} onChange={setTrack}>
-            {event.categories.map(c => (
-              <Select.Option key={c.categoryId} value={c.categoryId}>{c.categoryName}</Select.Option>
-            ))}
-          </Select>
-        </div>
-      </Modal>
     </div>
   );
 }

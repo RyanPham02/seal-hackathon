@@ -14,7 +14,7 @@ type BroadcastHistory = {
 };
 
 export default function AdminSystemNotifications() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [notifType, setNotifType] = useState("info");
@@ -52,8 +52,7 @@ export default function AdminSystemNotifications() {
     return () => { active = false; };
   }, [message]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const sendBroadcast = async () => {
     setSending(true);
     try {
       const res = await apiRequest<{ message: string; recipientCount: number }>("/notifications/broadcast", {
@@ -71,6 +70,17 @@ export default function AdminSystemNotifications() {
     } finally {
       setSending(false);
     }
+  };
+
+  // Broadcasts reach every user instantly and cannot be unsent — confirm first.
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    modal.confirm({
+      title: "Broadcast to all users?",
+      content: `"${title}" will be delivered to every user immediately and cannot be recalled.`,
+      okText: "Broadcast",
+      onOk: sendBroadcast,
+    });
   };
 
   return (

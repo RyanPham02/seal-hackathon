@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace SEAL.NET.Models.Entities
 {
@@ -15,5 +15,8 @@ namespace SEAL.NET.Models.Entities
 
         public Guid JudgeId { get; set; }
         public ApplicationUser Judge { get; set; } = null!;
+
+        public Guid? TeamId { get; set; }
+        public Team? Team { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using SEAL.NET.Models.Entities;
 
 namespace SEAL.NET.Data
@@ -10,6 +11,34 @@ namespace SEAL.NET.Data
             var roleManager = serviceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
             var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+            var context = serviceProvider.GetRequiredService<ApplicationDbContext>();
+
+            // 1. Ensure __EFMigrationsHistory exists
+            await context.Database.ExecuteSqlRawAsync(
+                @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                    ""MigrationId"" character varying(150) NOT NULL,
+                    ""ProductVersion"" character varying(32) NOT NULL,
+                    CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
+                );");
+
+            // 2. Insert baseline migrations if not present
+            await context.Database.ExecuteSqlRawAsync(
+                @"INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                  VALUES ('20260608123248_StoreUserProfileEnumsAsText', '8.0.27')
+                  ON CONFLICT (""MigrationId"") DO NOTHING;");
+            
+            await context.Database.ExecuteSqlRawAsync(
+                @"INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                  VALUES ('20260610041636_InitialPostgres', '8.0.27')
+                  ON CONFLICT (""MigrationId"") DO NOTHING;");
+            
+            await context.Database.ExecuteSqlRawAsync(
+                @"INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"")
+                  VALUES ('20260615154609_AddKickRequestsAndJudgeTeam', '8.0.27')
+                  ON CONFLICT (""MigrationId"") DO NOTHING;");
+
+            // 3. Run pending migrations (e.g. AddFinalRankAndPrize)
+            await context.Database.MigrateAsync();
 
             string[] roles =
             {

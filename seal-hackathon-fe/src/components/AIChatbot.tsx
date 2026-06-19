@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Button, Input, Avatar, Tooltip } from "antd";
 import { MessageOutlined, CloseOutlined, MinusOutlined, SendOutlined, RobotOutlined, UserOutlined, ArrowRightOutlined } from "@ant-design/icons";
 import { useRouter } from "next/navigation";
+import { useAuth } from "./AuthProvider";
 
 type MessageType = {
   id: number;
@@ -32,40 +33,18 @@ const defaultMessages: MessageType[] = [
 
 export default function AIChatbot() {
   const router = useRouter();
+  const { user } = useAuth();
+  const isLoggedIn = user !== null;
+  const role = user
+    ? user.roles.includes("Admin")
+      ? "Admin"
+      : user.role || user.roles[0] || ""
+    : "";
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
-  const [role, setRole] = useState("");
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [messages, setMessages] = useState<MessageType[]>(defaultMessages);
   const nextIdRef = useRef(2);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const loadUser = () => {
-      const stored = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
-      if (!stored) {
-        setRole("");
-        setIsLoggedIn(false);
-        return;
-      }
-
-      setIsLoggedIn(true);
-      try {
-        const user = JSON.parse(stored);
-        if (Array.isArray(user.roles) && user.roles.includes("Admin")) {
-          setRole("Admin");
-        } else {
-          setRole(user.role || user.roles?.[0] || "");
-        }
-      } catch {
-        setRole("");
-      }
-    };
-
-    loadUser();
-    window.addEventListener("storage", loadUser);
-    return () => window.removeEventListener("storage", loadUser);
-  }, []);
 
   useEffect(() => {
     if (isOpen) {

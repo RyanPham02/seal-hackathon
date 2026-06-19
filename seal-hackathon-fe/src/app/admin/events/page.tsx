@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { App } from "antd";
 import { apiRequest } from "@/lib/api";
+import { TRACKS_OPTIONS } from "@/lib/constants";
 
 /* ─── Types ─── */
 type RoundDto = {
@@ -35,8 +36,12 @@ function toDateTimeLocal(value: string | null) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function toApiDate(value: string) {
-  return new Date(value).toISOString();
+function toApiDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  // Guard against `new Date("").toISOString()` throwing a cryptic RangeError
+  // when a deadline field has been cleared.
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function toDisplayDate(value?: string | null) {
@@ -50,7 +55,6 @@ function toDisplayDate(value?: string | null) {
 /* ─── Create-form defaults ─── */
 const INITIAL_EVENT_FORM = { eventName: "", description: "", startDate: "", endDate: "" };
 const INITIAL_ROUND = () => ({ id: Date.now(), name: "", topN: "5", deadline: "" });
-const TRACKS_OPTIONS = ["AI & Machine Learning", "Web Development", "Mobile App", "Cybersecurity", "Open Innovation"];
 
 /* ════════════════════════════════════════════════════════════════ */
 export default function AdminEventsPage() {
@@ -65,6 +69,7 @@ export default function AdminEventsPage() {
   const [draftDeadlines, setDraftDeadlines] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [advancingId, setAdvancingId] = useState("");
 
   /* ── Create form ── */
   const [eventForm, setEventForm] = useState(INITIAL_EVENT_FORM);
@@ -150,6 +155,28 @@ export default function AdminEventsPage() {
     }
   };
 
+  const handleAdvanceRound = async (roundId: string, isFinal: boolean = false) => {
+    const confirmMessage = isFinal 
+      ? "Are you sure you want to end the competition? The system will calculate average scores, rank all teams, award prizes, and send notifications."
+      : "Are you sure you want to advance this round? Teams with average score >= 40 will move to the next round, and others will be eliminated.";
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    setAdvancingId(roundId);
+    try {
+      const res = await apiRequest<{ message: string }>(
+        `/admin/rounds/${roundId}/advance`,
+        { method: "POST" }
+      );
+      message.success(res.message || "Round advanced successfully.");
+      await refreshEvents();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Could not advance round.");
+    } finally {
+      setAdvancingId("");
+    }
+  };
+
   /* ─────────────── Create event ─────────────── */
   const addRound = () => setRounds((rs) => [...rs, { ...INITIAL_ROUND(), name: `Round ${rs.length + 1}` }]);
   const removeRound = (id: number) => setRounds((rs) => rs.filter((r) => r.id !== id));
@@ -176,29 +203,47 @@ export default function AdminEventsPage() {
 
       const eventId = created.eventId ?? created.id ?? "";
 
-      await Promise.all(
-        rounds.map((r, i) =>
-          apiRequest(`/events/${eventId}/rounds`, {
-            method: "POST",
-            body: JSON.stringify({
-              roundName: r.name.trim(),
-              submissionDeadline: toApiDate(r.deadline),
-              roundOrder: i + 1,
-              maxTeamsAdvancing: Number(r.topN) || 0,
-            }),
-          }),
-        ),
-      );
-
-      if (selectedTracks.length > 0) {
+      // The event now exists; if a follow-up call fails, surface what happened
+      // instead of letting a retry create a duplicate event.
+      try {
         await Promise.all(
-          selectedTracks.map((track) =>
-            apiRequest(`/events/${eventId}/categories`, {
+          rounds.map((r, i) =>
+            apiRequest(`/events/${eventId}/rounds`, {
               method: "POST",
-              body: JSON.stringify({ categoryName: track, description: null }),
+              body: JSON.stringify({
+                roundName: r.name.trim(),
+                submissionDeadline: toApiDate(r.deadline),
+                roundOrder: i + 1,
+                maxTeamsAdvancing: Number(r.topN) || 0,
+              }),
             }),
           ),
         );
+
+        if (selectedTracks.length > 0) {
+          await Promise.all(
+            selectedTracks.map((track) =>
+              apiRequest(`/events/${eventId}/categories`, {
+                method: "POST",
+                body: JSON.stringify({ categoryName: track, description: null }),
+              }),
+            ),
+          );
+        }
+      } catch (configErr) {
+        message.warning(
+          `The event was created, but part of its configuration failed: ${
+            configErr instanceof Error ? configErr.message : "unknown error"
+          }. Finish setting it up from the event list instead of creating it again.`,
+          8,
+        );
+        setEventForm(INITIAL_EVENT_FORM);
+        setRounds([{ id: 1, name: "Qualifying Round", topN: "10", deadline: "" }]);
+        setSelectedTracks([]);
+        setCreateStep(1);
+        setView("list");
+        await refreshEvents();
+        return;
       }
 
       message.success("Event created successfully.");
@@ -322,9 +367,25 @@ export default function AdminEventsPage() {
                             style={{ paddingLeft: "2.2rem" }}
                             value={draftDeadlines[round.roundId] ?? ""}
                             onChange={(e) => setDraftDeadlines((cur) => ({ ...cur, [round.roundId]: e.target.value }))}
-                            disabled={saving}
+                            disabled={saving || advancingId !== ""}
                           />
                         </div>
+                      </div>
+                      <div style={{ alignSelf: "flex-end", marginBottom: "0.2rem" }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ padding: "0.45rem 1rem", minWidth: 120 }}
+                          onClick={() => handleAdvanceRound(round.roundId, index === selectedEvent.rounds.length - 1)}
+                          disabled={advancingId !== "" || loading || saving || selectedEvent.status === "Completed"}
+                        >
+                          {advancingId === round.roundId ? (
+                            <span className="spinner" />
+                          ) : index === selectedEvent.rounds.length - 1 ? (
+                            "End Competition"
+                          ) : (
+                            "Advance Round"
+                          )}
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -389,19 +450,19 @@ export default function AdminEventsPage() {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                   <div className="form-group">
-                    <label className="form-label">Start Date *</label>
+                    <label className="form-label">Start Date & Time *</label>
                     <input
                       className="form-input"
-                      type="date"
+                      type="datetime-local"
                       value={eventForm.startDate}
                       onChange={(e) => setEventForm({ ...eventForm, startDate: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">End Date *</label>
+                    <label className="form-label">End Date & Time *</label>
                     <input
                       className="form-input"
-                      type="date"
+                      type="datetime-local"
                       value={eventForm.endDate}
                       onChange={(e) => setEventForm({ ...eventForm, endDate: e.target.value })}
                     />
@@ -424,7 +485,7 @@ export default function AdminEventsPage() {
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {rounds.map((r, i) => (
-                  <div key={r.id} style={{ background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "1.25rem" }}>
+                  <div key={r.id} style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "1.25rem" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
                       <GripVertical size={16} style={{ color: "var(--color-text-3)" }} />
                       <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-primary)", background: "rgba(99,102,241,0.1)", padding: "0.15rem 0.5rem", borderRadius: "var(--radius-sm)" }}>
@@ -461,7 +522,7 @@ export default function AdminEventsPage() {
                         <label className="form-label"><Clock size={11} /> Submission Deadline *</label>
                         <input
                           className="form-input"
-                          type="date"
+                          type="datetime-local"
                           value={r.deadline}
                           onChange={(e) => setRounds(rounds.map((x) => x.id === r.id ? { ...x, deadline: e.target.value } : x))}
                         />
@@ -487,7 +548,7 @@ export default function AdminEventsPage() {
                     style={{
                       display: "flex", alignItems: "center", gap: "0.75rem",
                       padding: "0.9rem 1rem", cursor: "pointer", transition: "all 0.15s",
-                      background: selectedTracks.includes(t) ? "rgba(99,102,241,0.08)" : "rgba(15,23,42,0.4)",
+                      background: selectedTracks.includes(t) ? "rgba(99,102,241,0.08)" : "var(--color-surface-2)",
                       border: `1px solid ${selectedTracks.includes(t) ? "rgba(99,102,241,0.4)" : "var(--color-border-2)"}`,
                       borderRadius: "var(--radius-md)",
                     }}

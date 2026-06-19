@@ -25,7 +25,7 @@ function formatDate(value: string) {
 }
 
 export default function DocumentsPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [docs, setDocs] = useState<DocumentDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,14 +87,22 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDelete = async (doc: DocumentDto) => {
-    try {
-      await apiRequest(`/Documents/${doc.documentId}`, { method: "DELETE" });
-      message.success("Document deleted.");
-      await loadDocs();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Delete failed.");
-    }
+  const handleDelete = (doc: DocumentDto) => {
+    modal.confirm({
+      title: `Delete "${doc.fileName}"?`,
+      content: "This permanently removes the file for everyone. This cannot be undone.",
+      okText: "Delete",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiRequest(`/Documents/${doc.documentId}`, { method: "DELETE" });
+          message.success("Document deleted.");
+          await loadDocs();
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : "Delete failed.");
+        }
+      },
+    });
   };
 
   return (
@@ -134,7 +142,7 @@ export default function DocumentsPage() {
                 <button className="btn btn-sm" onClick={() => handleDownload(d)} style={{ background: "rgba(99,102,241,0.1)", color: "var(--color-primary-2)", padding: "0.4rem 0.8rem", border: "1px solid rgba(99,102,241,0.2)" }}>
                   <Download size={14} style={{ marginRight: 4 }} /> Download
                 </button>
-                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDelete(d)}><Trash2 size={14} /></button>
+                <button className="btn btn-ghost btn-sm btn-icon" onClick={() => handleDelete(d)} aria-label={`Delete ${d.fileName}`}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}

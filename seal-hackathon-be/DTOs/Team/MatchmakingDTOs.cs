@@ -50,4 +50,15 @@ namespace SEAL.NET.DTOs.Team
         public int MatchPercentage { get; set; }
         public List<string> MatchReasons { get; set; } = [];
     }
+
+    public class RecruitingTeamDto
+    {
+        public Guid TeamId { get; set; }
+        public string TeamName { get; set; } = string.Empty;
+        public string CategoryName { get; set; } = string.Empty;
+        public string LeaderName { get; set; } = string.Empty;
+        public int MemberCount { get; set; }
+        public List<string> Members { get; set; } = [];
+        public bool HasPendingRequest { get; set; }
+    }
 }

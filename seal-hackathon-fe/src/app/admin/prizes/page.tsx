@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Typography, Table, Button, Space, Card, Drawer, Form, Input, InputNumber, App, Modal, Select, Tag } from "antd";
+import { Typography, Table, Button, Space, Card, Drawer, Form, Input, InputNumber, App, Select, Tag } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { apiRequest } from "@/lib/api";
 
@@ -31,7 +31,7 @@ type PrizeFormValues = {
 };
 
 export default function AdminPrizesPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [events, setEvents] = useState<EventDto[]>([]);
   const [eventId, setEventId] = useState("");
   const [prizes, setPrizes] = useState<PrizeDto[]>([]);
@@ -123,7 +123,7 @@ export default function AdminPrizesPage() {
   };
 
   const handleDelete = (record: PrizeDto) => {
-    Modal.confirm({
+    modal.confirm({
       title: `Delete prize "${record.title}"?`,
       okType: "danger",
       onOk: async () => {
@@ -201,8 +201,8 @@ export default function AdminPrizesPage() {
       width: 110,
       render: (_: unknown, record: PrizeDto) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => showEditDrawer(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record)} />
+          <Button type="text" aria-label={`Edit prize ${record.title}`} icon={<EditOutlined />} onClick={() => showEditDrawer(record)} />
+          <Button type="text" danger aria-label={`Delete prize ${record.title}`} icon={<DeleteOutlined />} onClick={() => handleDelete(record)} />
         </Space>
       ),
     },
@@ -239,6 +239,7 @@ export default function AdminPrizesPage() {
 
       <Card variant="borderless" styles={{ body: { padding: 0 } }} style={{ background: "transparent" }}>
         <Table
+          className="custom-antd-table"
           columns={columns}
           dataSource={filteredPrizes}
           pagination={{ pageSize: 10 }}
@@ -251,7 +252,7 @@ export default function AdminPrizesPage() {
       <Drawer
         title={isEditMode ? "Edit Prize" : "Create New Prize"}
         placement="right"
-        width={480}
+        styles={{ wrapper: { width: 480 } }}
         onClose={() => setDrawerVisible(false)}
         open={drawerVisible}
         extra={

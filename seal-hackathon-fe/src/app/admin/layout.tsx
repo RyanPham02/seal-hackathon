@@ -1,45 +1,48 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Sidebar from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
 import styles from "../dashboard/layout.module.css";
 import { App } from "antd";
-import { clearAuthSession, fetchCurrentUser } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   const { message } = App.useApp();
+  const { user, isLoading, loggingOut } = useAuth();
+
+  // /admin/login lives under this layout but must remain reachable without an
+  // active session — otherwise the gate traps it on a permanent spinner
+  // (chicken-and-egg: must be logged in as admin to log in as admin).
+  const isPublicAdminRoute = pathname === "/admin/login";
 
   useEffect(() => {
-    let active = true;
+    // Suppress the redirect while a logout is in flight — the caller of
+    // logout() has its own destination in mind (e.g. "/") and we'd otherwise
+    // race them and win, dumping the user on /admin/login.
+    if (loggingOut || isPublicAdminRoute || isLoading) return;
+    if (!user) {
+      router.push("/admin/login");
+      return;
+    }
+    if (!user.roles.includes("Admin")) {
+      message.error("Access denied. Admin privileges required.");
+      router.push("/dashboard");
+    }
+  }, [loggingOut, isPublicAdminRoute, isLoading, user, router, message]);
 
-    fetchCurrentUser()
-      .then((user) => {
-        if (!active) return;
-        if (!user.roles.includes("Admin")) {
-          message.error("Access denied. Admin privileges required.");
-          router.push("/dashboard");
-        } else {
-          setAuthChecked(true);
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        clearAuthSession();
-        router.push("/admin/login");
-      });
+  // The login page renders without the shell — no Sidebar/TopBar around it.
+  if (isPublicAdminRoute) {
+    return <>{children}</>;
+  }
 
-    return () => {
-      active = false;
-    };
-  }, [router, message]);
-
-  // Block rendering until role verified — prevents flash of admin content for non-admin users
-  if (!authChecked) {
+  // Block rendering until the role is verified — prevents flash of admin
+  // content for non-admin users.
+  if (isLoading || !user || !user.roles.includes("Admin")) {
     return (
       <div
         style={{

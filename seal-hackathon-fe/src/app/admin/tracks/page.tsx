@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 import React, { useEffect, useState } from "react";
-import { Typography, Table, Button, Space, Card, Drawer, Form, Input, App, Modal, Select } from "antd";
+import { Typography, Table, Button, Space, Card, Drawer, Form, Input, App, Select } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { apiRequest } from "@/lib/api";
 
@@ -18,7 +18,7 @@ type CategoryDto = {
 };
 
 export default function AdminTracksPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [events, setEvents] = useState<EventDto[]>([]);
   const [eventId, setEventId] = useState("");
   const [tracks, setTracks] = useState<CategoryDto[]>([]);
@@ -27,6 +27,7 @@ export default function AdminTracksPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
 
   const loadTracks = async (selectedEventId: string) => {
@@ -109,7 +110,7 @@ export default function AdminTracksPage() {
   const handleDelete = (id: string) => {
     if (!eventId) return;
 
-    Modal.confirm({
+    modal.confirm({
       title: "Are you sure you want to delete this track?",
       onOk: async () => {
         try {
@@ -129,6 +130,7 @@ export default function AdminTracksPage() {
       return;
     }
 
+    setSaving(true);
     try {
       if (isEditMode && editingId) {
         await apiRequest(`/events/${eventId}/categories/${editingId}`, {
@@ -154,6 +156,8 @@ export default function AdminTracksPage() {
       await loadTracks(eventId);
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not save track.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -175,8 +179,8 @@ export default function AdminTracksPage() {
       key: "actions",
       render: (_: unknown, record: CategoryDto) => (
         <Space>
-          <Button type="text" icon={<EditOutlined />} onClick={() => showEditDrawer(record)} />
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.categoryId)} />
+          <Button type="text" aria-label={`Edit track ${record.categoryName}`} icon={<EditOutlined />} onClick={() => showEditDrawer(record)} />
+          <Button type="text" danger aria-label={`Delete track ${record.categoryName}`} icon={<DeleteOutlined />} onClick={() => handleDelete(record.categoryId)} />
         </Space>
       )
     }
@@ -213,6 +217,7 @@ export default function AdminTracksPage() {
 
       <Card variant="borderless" styles={{ body: { padding: 0 } }} style={{ background: "transparent" }}>
         <Table
+          className="custom-antd-table"
           columns={columns}
           dataSource={filteredTracks}
           pagination={{ pageSize: 10 }}
@@ -225,13 +230,13 @@ export default function AdminTracksPage() {
       <Drawer
         title={isEditMode ? "Edit Track" : "Create New Track"}
         placement="right"
-        width={480}
+        styles={{ wrapper: { width: 480 } }}
         onClose={() => setDrawerVisible(false)}
         open={drawerVisible}
         extra={
           <Space>
-            <Button onClick={() => setDrawerVisible(false)}>Cancel</Button>
-            <Button type="primary" onClick={() => form.submit()}>
+            <Button onClick={() => setDrawerVisible(false)} disabled={saving}>Cancel</Button>
+            <Button type="primary" loading={saving} onClick={() => form.submit()}>
               {isEditMode ? "Save Changes" : "Create Track"}
             </Button>
           </Space>

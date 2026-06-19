@@ -28,13 +28,13 @@ export default function AdminDashboardPage() {
           </div>
         </Link>
         
-        <div className="stat-card">
+        <Link href="/admin/system-notifications" className="stat-card" style={{ textDecoration: 'none' }}>
           <div className="stat-icon" style={{ background: "rgba(244,63,94,0.15)", color: "#f43f5e" }}><Shield size={24} /></div>
           <div>
-            <div className="stat-value">System Alerts</div>
-            <div className="stat-label">Monitor system health</div>
+            <div className="stat-value">System Notifications</div>
+            <div className="stat-label">Broadcast announcements to users</div>
           </div>
-        </div>
+        </Link>
       </div>
     </div>
   );

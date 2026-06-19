@@ -1,16 +1,9 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using SEAL.NET.Data;
 using SEAL.NET.DTOs.Team;
-using SEAL.NET.Models.Entities;
-using SEAL.NET.Models.Enums;
+using SEAL.NET.Services.Common;
 using SEAL.NET.Services.Interfaces;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace SEAL.NET.Controllers
 {
@@ -19,13 +12,11 @@ namespace SEAL.NET.Controllers
     [Authorize]
     public class MatchmakingController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
-        private readonly INotificationService _notificationService;
+        private readonly IMatchmakingService _matchmakingService;
 
-        public MatchmakingController(ApplicationDbContext context, INotificationService notificationService)
+        public MatchmakingController(IMatchmakingService matchmakingService)
         {
-            _context = context;
-            _notificationService = notificationService;
+            _matchmakingService = matchmakingService;
         }
 
         private Guid? TryGetCurrentUserId()
@@ -34,537 +25,40 @@ namespace SEAL.NET.Controllers
             return Guid.TryParse(raw, out var id) ? id : null;
         }
 
-        private async Task<Team?> GetCurrentUserTeamAsync(Guid userId)
-        {
-            return await _context.TeamMembers
-                .Where(tm => tm.UserId == userId)
-                .Include(tm => tm.Team!)
-                    .ThenInclude(t => t.Category)
-                .Include(tm => tm.Team!)
-                    .ThenInclude(t => t.Members)
-                        .ThenInclude(m => m.User)
-                .Select(tm => tm.Team)
-                .FirstOrDefaultAsync();
-        }
-
-        private static (string Role, List<string> Skills, int Xp) GetDeterministicDetails(Guid userId, string fullName)
-        {
-            int hash = Math.Abs(userId.GetHashCode());
-            string[] roles = ["Frontend Developer", "Backend Developer", "UI/UX Designer", "AI Engineer", "Web3 Developer", "Fullstack Developer"];
-            
-            List<string>[] skills = [
-                new List<string> {"React", "TypeScript", "Tailwind CSS", "Next.js", "Redux"},
-                new List<string> {"Node.js", "Express", "ASP.NET Core", "SQL Server", "Docker"},
-                new List<string> {"Figma", "UI/UX Design", "Wireframing", "Prototyping", "User Research"},
-                new List<string> {"Python", "PyTorch", "NLP", "Machine Learning", "OpenAI"},
-                new List<string> {"Solidity", "Rust", "Smart Contracts", "Cryptography", "Ether.js"},
-                new List<string> {"Vue.js", "NestJS", "PostgreSQL", "AWS", "GraphQL"}
-            ];
-
-            int roleIdx = hash % roles.Length;
-            string role = roles[roleIdx];
-            List<string> userSkills = skills[roleIdx];
-            int xp = 1000 + (hash % 1000);
-
-            return (role, userSkills, xp);
-        }
-
         [HttpGet("users/free-agents")]
         public async Task<IActionResult> GetFreeAgents(
             [FromQuery] Guid? eventId,
             [FromQuery] Guid? categoryId,
             [FromQuery] string? search,
             [FromQuery] string? role)
-        {
-            var query = _context.Users.Where(u => u.IsApproved);
-
-            if (categoryId != null && categoryId != Guid.Empty)
-            {
-                var eventOfCategory = await _context.Categories
-                    .Where(c => c.CategoryId == categoryId)
-                    .Select(c => c.EventId)
-                    .FirstOrDefaultAsync();
-
-                if (eventOfCategory != Guid.Empty)
-                {
-                    var categoryIdsInEvent = await _context.Categories
-                        .Where(c => c.EventId == eventOfCategory)
-                        .Select(c => c.CategoryId)
-                        .ToListAsync();
-
-                    var usersInEventTeams = await _context.TeamMembers
-                        .Include(tm => tm.Team)
-                        .Where(tm => categoryIdsInEvent.Contains(tm.Team!.CategoryId))
-                        .Select(tm => tm.UserId)
-                        .ToListAsync();
-
-                    query = query.Where(u => !usersInEventTeams.Contains(u.Id));
-                }
-            }
-            else if (eventId != null && eventId != Guid.Empty)
-            {
-                var categoryIdsInEvent = await _context.Categories
-                    .Where(c => c.EventId == eventId)
-                    .Select(c => c.CategoryId)
-                    .ToListAsync();
-
-                var usersInEventTeams = await _context.TeamMembers
-                    .Include(tm => tm.Team)
-                    .Where(tm => categoryIdsInEvent.Contains(tm.Team!.CategoryId))
-                    .Select(tm => tm.UserId)
-                    .ToListAsync();
-
-                query = query.Where(u => !usersInEventTeams.Contains(u.Id));
-            }
-            else
-            {
-                var usersInTeams = await _context.TeamMembers.Select(tm => tm.UserId).ToListAsync();
-                query = query.Where(u => !usersInTeams.Contains(u.Id));
-            }
-
-            var users = await query.ToListAsync();
-            var dtoList = users.Select(u =>
-            {
-                var details = GetDeterministicDetails(u.Id, u.FullName);
-                return new FreeAgentDto
-                {
-                    Id = u.Id,
-                    Name = u.FullName,
-                    Email = u.Email ?? string.Empty,
-                    StudentCode = u.StudentCode,
-                    SchoolName = u.SchoolName,
-                    StudentType = u.StudentType?.ToString() ?? "External",
-                    Role = details.Role,
-                    Skills = details.Skills,
-                    Xp = details.Xp
-                };
-            });
-
-            if (!string.IsNullOrWhiteSpace(search))
-            {
-                var searchLower = search.ToLower();
-                dtoList = dtoList.Where(d =>
-                    d.Name.ToLower().Contains(searchLower) ||
-                    d.Email.ToLower().Contains(searchLower) ||
-                    (d.StudentCode != null && d.StudentCode.ToLower().Contains(searchLower)) ||
-                    (d.SchoolName != null && d.SchoolName.ToLower().Contains(searchLower)) ||
-                    d.Skills.Any(s => s.ToLower().Contains(searchLower))
-                );
-            }
-
-            if (!string.IsNullOrWhiteSpace(role))
-            {
-                var roleLower = role.ToLower();
-                dtoList = dtoList.Where(d => d.Role.ToLower().Contains(roleLower) || d.Skills.Any(s => s.ToLower().Contains(roleLower)));
-            }
-
-            return Ok(dtoList.ToList());
-        }
+            => this.ToActionResult(await _matchmakingService.GetFreeAgentsAsync(eventId, categoryId, search, role));
 
         [HttpGet("matchmaking/suggestions")]
         public async Task<IActionResult> GetSuggestions()
-        {
-            var userId = TryGetCurrentUserId().GetValueOrDefault();
-            var team = await GetCurrentUserTeamAsync(userId);
-
-            var membersInTeams = await _context.TeamMembers.Select(tm => tm.UserId).ToListAsync();
-            var freeAgentsQuery = _context.Users.Where(u => !membersInTeams.Contains(u.Id) && u.IsApproved);
-            var freeAgents = await freeAgentsQuery.ToListAsync();
-
-            if (team == null)
-            {
-                var defaultList = freeAgents.Take(10).Select(u =>
-                {
-                    var details = GetDeterministicDetails(u.Id, u.FullName);
-                    return new MatchmakingSuggestionDto
-                    {
-                        Id = u.Id,
-                        Name = u.FullName,
-                        Email = u.Email ?? string.Empty,
-                        Role = details.Role,
-                        Skills = details.Skills,
-                        Xp = details.Xp,
-                        MatchPercentage = 80,
-                        MatchReasons = ["Highly active user available for any team"]
-                    };
-                }).ToList();
-
-                return Ok(defaultList);
-            }
-
-            var teamMemberRoles = team.Members.Select(m =>
-            {
-                var details = GetDeterministicDetails(m.UserId, m.User!.FullName);
-                return details.Role;
-            }).ToList();
-
-            var allRolesList = new List<string> { "Frontend Developer", "Backend Developer", "UI/UX Designer", "AI Engineer", "Web3 Developer" };
-            var missingRoles = allRolesList.Where(r => !teamMemberRoles.Contains(r)).ToList();
-
-            var suggestions = freeAgents.Select(u =>
-            {
-                var details = GetDeterministicDetails(u.Id, u.FullName);
-                int matchPercentage = 60;
-                var matchReasons = new List<string>();
-
-                if (missingRoles.Contains(details.Role))
-                {
-                    matchPercentage += 25;
-                    matchReasons.Add($"Your team lacks a {details.Role}");
-                }
-
-                if (team.Members.Any(m => m.User!.SchoolName != null && m.User.SchoolName.Equals(u.SchoolName, StringComparison.OrdinalIgnoreCase)))
-                {
-                    matchPercentage += 10;
-                    matchReasons.Add($"Same university ({u.SchoolName})");
-                }
-
-                if (details.Xp > 1500)
-                {
-                    matchPercentage += 4;
-                    matchReasons.Add("Experienced developer (High XP)");
-                }
-
-                if (matchPercentage > 99) matchPercentage = 99;
-
-                return new MatchmakingSuggestionDto
-                {
-                    Id = u.Id,
-                    Name = u.FullName,
-                    Email = u.Email ?? string.Empty,
-                    Role = details.Role,
-                    Skills = details.Skills,
-                    Xp = details.Xp,
-                    MatchPercentage = matchPercentage,
-                    MatchReasons = matchReasons
-                };
-            })
-            .OrderByDescending(s => s.MatchPercentage)
-            .Take(10)
-            .ToList();
-
-            return Ok(suggestions);
-        }
+            => this.ToActionResult(await _matchmakingService.GetSuggestionsAsync(TryGetCurrentUserId().GetValueOrDefault()));
 
         [HttpPost("teams/invitations")]
         public async Task<IActionResult> CreateInvitation([FromBody] CreateInvitationRequest request)
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-            var team = await GetCurrentUserTeamAsync(currentUserId);
-
-            if (team == null)
-                return NotFound(new { message = "You have not joined any team yet." });
-
-            if (team.LeaderId != currentUserId)
-                return BadRequest(new { message = "Only the team leader can invite members." });
-
-            if (team.Status != TeamStatus.Pending)
-                return BadRequest(new { message = "Cannot modify members after team approval." });
-
-            if (team.Members.Count >= 5)
-                return BadRequest(new { message = "Your team is already full (maximum 5 members)." });
-
-            ApplicationUser? invitee = null;
-            if (request.InviteeUserId != null && request.InviteeUserId != Guid.Empty)
-            {
-                invitee = await _context.Users.FirstOrDefaultAsync(u => u.Id == request.InviteeUserId);
-            }
-            else if (!string.IsNullOrWhiteSpace(request.StudentCodeOrEmail))
-            {
-                var normalized = request.StudentCodeOrEmail.Trim().ToLower();
-                invitee = await _context.Users.FirstOrDefaultAsync(u =>
-                    (u.StudentCode != null && u.StudentCode.ToLower() == normalized) ||
-                    (u.Email != null && u.Email.ToLower() == normalized));
-            }
-
-            if (invitee == null)
-                return NotFound(new { message = "Invitee user not found." });
-
-            if (!invitee.IsApproved)
-                return BadRequest(new { message = "This user's account is disabled or not allowed to access." });
-
-            if (invitee.Id == currentUserId)
-                return BadRequest(new { message = "You cannot invite yourself." });
-
-            var categoryId = team.CategoryId;
-            var eventId = team.Category!.EventId;
-            var categoryIdsInSameEvent = await _context.Categories
-                .Where(c => c.EventId == eventId)
-                .Select(c => c.CategoryId)
-                .ToListAsync();
-
-            var alreadyJoinedEvent = await _context.TeamMembers
-                .Include(tm => tm.Team)
-                .AnyAsync(tm =>
-                    tm.UserId == invitee.Id &&
-                    categoryIdsInSameEvent.Contains(tm.Team!.CategoryId));
-
-            if (alreadyJoinedEvent)
-                return BadRequest(new { message = "User already joined another team in this event." });
-
-            var existingPending = await _context.TeamInvitations
-                .AnyAsync(ti => ti.TeamId == team.TeamId && ti.InviteeUserId == invitee.Id && ti.Status == InvitationStatus.Pending);
-
-            if (existingPending)
-                return BadRequest(new { message = "You have already sent a pending invitation to this user." });
-
-            var invitation = new TeamInvitation
-            {
-                TeamId = team.TeamId,
-                InviterUserId = currentUserId,
-                InviteeUserId = invitee.Id,
-                Status = InvitationStatus.Pending,
-                Message = request.Message?.Trim(),
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.TeamInvitations.Add(invitation);
-            await _context.SaveChangesAsync();
-
-            try
-            {
-                await _notificationService.CreateAsync(
-                    invitee.Id,
-                    "Team Invitation",
-                    $"You have been invited to join team {team.TeamName}.",
-                    "team"
-                );
-            }
-            catch { }
-
-            return Ok(new { message = "Invitation sent successfully." });
-        }
+            => this.ToActionResult(await _matchmakingService.CreateInvitationAsync(TryGetCurrentUserId(), request));
 
         [HttpGet("teams/invitations/sent")]
         public async Task<IActionResult> GetSentInvitations()
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-            var team = await GetCurrentUserTeamAsync(currentUserId);
-
-            if (team == null)
-                return Ok(new List<InvitationResponseDto>());
-
-            var sent = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                .Include(ti => ti.InviteeUser)
-                .Include(ti => ti.InviterUser)
-                .Where(ti => ti.TeamId == team.TeamId)
-                .OrderByDescending(ti => ti.CreatedAt)
-                .Select(ti => new InvitationResponseDto
-                {
-                    Id = ti.Id,
-                    TeamId = ti.TeamId,
-                    TeamName = ti.Team.TeamName,
-                    InviterUserId = ti.InviterUserId,
-                    InviterUserName = ti.InviterUser.FullName,
-                    InviteeUserId = ti.InviteeUserId,
-                    InviteeUserName = ti.InviteeUser.FullName,
-                    InviteeUserEmail = ti.InviteeUser.Email ?? string.Empty,
-                    Status = ti.Status.ToString(),
-                    Message = ti.Message,
-                    CreatedAt = ti.CreatedAt,
-                    RespondedAt = ti.RespondedAt
-                })
-                .ToListAsync();
-
-            return Ok(sent);
-        }
+            => this.ToActionResult(await _matchmakingService.GetSentInvitationsAsync(TryGetCurrentUserId()));
 
         [HttpGet("teams/invitations/received")]
         public async Task<IActionResult> GetReceivedInvitations()
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-
-            var received = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                .Include(ti => ti.InviteeUser)
-                .Include(ti => ti.InviterUser)
-                .Where(ti => ti.InviteeUserId == currentUserId)
-                .OrderByDescending(ti => ti.CreatedAt)
-                .Select(ti => new InvitationResponseDto
-                {
-                    Id = ti.Id,
-                    TeamId = ti.TeamId,
-                    TeamName = ti.Team.TeamName,
-                    InviterUserId = ti.InviterUserId,
-                    InviterUserName = ti.InviterUser.FullName,
-                    InviteeUserId = ti.InviteeUserId,
-                    InviteeUserName = ti.InviteeUser.FullName,
-                    InviteeUserEmail = ti.InviteeUser.Email ?? string.Empty,
-                    Status = ti.Status.ToString(),
-                    Message = ti.Message,
-                    CreatedAt = ti.CreatedAt,
-                    RespondedAt = ti.RespondedAt
-                })
-                .ToListAsync();
-
-            return Ok(received);
-        }
+            => this.ToActionResult(await _matchmakingService.GetReceivedInvitationsAsync(TryGetCurrentUserId()));
 
         [HttpPost("teams/invitations/{id}/accept")]
         public async Task<IActionResult> AcceptInvitation(Guid id)
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-
-            var invitation = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                    .ThenInclude(t => t.Category)
-                .Include(ti => ti.InviteeUser)
-                .FirstOrDefaultAsync(ti => ti.Id == id);
-
-            if (invitation == null)
-                return NotFound(new { message = "Invitation not found." });
-
-            if (invitation.InviteeUserId != currentUserId)
-                return Forbid();
-
-            if (invitation.Status != InvitationStatus.Pending)
-                return BadRequest(new { message = "This invitation is no longer pending." });
-
-            var team = await _context.Teams
-                .Include(t => t.Members)
-                .FirstOrDefaultAsync(t => t.TeamId == invitation.TeamId);
-
-            if (team == null)
-                return NotFound(new { message = "Team not found." });
-
-            if (team.Status != TeamStatus.Pending)
-                return BadRequest(new { message = "This team is already approved and closed to changes." });
-
-            if (team.Members.Count >= 5)
-                return BadRequest(new { message = "This team is already full (maximum 5 members)." });
-
-            var eventId = invitation.Team.Category!.EventId;
-            var categoryIdsInSameEvent = await _context.Categories
-                .Where(c => c.EventId == eventId)
-                .Select(c => c.CategoryId)
-                .ToListAsync();
-
-            var alreadyJoinedEvent = await _context.TeamMembers
-                .Include(tm => tm.Team)
-                .AnyAsync(tm =>
-                    tm.UserId == currentUserId &&
-                    categoryIdsInSameEvent.Contains(tm.Team!.CategoryId));
-
-            if (alreadyJoinedEvent)
-                return BadRequest(new { message = "You have already joined another team in this event." });
-
-            var membership = new TeamMember
-            {
-                TeamId = team.TeamId,
-                UserId = currentUserId,
-                Role = "Member"
-            };
-
-            _context.TeamMembers.Add(membership);
-
-            invitation.Status = InvitationStatus.Accepted;
-            invitation.RespondedAt = DateTime.UtcNow;
-
-            var otherPendingInEvent = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                .Where(ti => ti.InviteeUserId == currentUserId && ti.Status == InvitationStatus.Pending && ti.Id != id)
-                .ToListAsync();
-
-            foreach (var otherInvite in otherPendingInEvent)
-            {
-                if (categoryIdsInSameEvent.Contains(otherInvite.Team.CategoryId))
-                {
-                    otherInvite.Status = InvitationStatus.Rejected;
-                    otherInvite.RespondedAt = DateTime.UtcNow;
-                }
-            }
-
-            await _context.SaveChangesAsync();
-
-            try
-            {
-                await _notificationService.CreateAsync(
-                    team.LeaderId,
-                    "Invitation Accepted",
-                    $"{invitation.InviteeUser.FullName} accepted your invitation to join {team.TeamName}.",
-                    "team"
-                );
-            }
-            catch { }
-
-            return Ok(new { message = "You have joined the team successfully." });
-        }
+            => this.ToActionResult(await _matchmakingService.AcceptInvitationAsync(TryGetCurrentUserId(), id));
 
         [HttpPost("teams/invitations/{id}/reject")]
         public async Task<IActionResult> RejectInvitation(Guid id)
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-
-            var invitation = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                .Include(ti => ti.InviteeUser)
-                .FirstOrDefaultAsync(ti => ti.Id == id);
-
-            if (invitation == null)
-                return NotFound(new { message = "Invitation not found." });
-
-            if (invitation.InviteeUserId != currentUserId)
-                return Forbid();
-
-            if (invitation.Status != InvitationStatus.Pending)
-                return BadRequest(new { message = "This invitation is no longer pending." });
-
-            invitation.Status = InvitationStatus.Rejected;
-            invitation.RespondedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            try
-            {
-                await _notificationService.CreateAsync(
-                    invitation.Team.LeaderId,
-                    "Invitation Rejected",
-                    $"{invitation.InviteeUser.FullName} rejected your invitation to join {invitation.Team.TeamName}.",
-                    "team"
-                );
-            }
-            catch { }
-
-            return Ok(new { message = "Invitation rejected successfully." });
-        }
+            => this.ToActionResult(await _matchmakingService.RejectInvitationAsync(TryGetCurrentUserId(), id));
 
         [HttpPost("teams/invitations/{id}/cancel")]
         public async Task<IActionResult> CancelInvitation(Guid id)
-        {
-            var currentUserIdRaw = TryGetCurrentUserId();
-            if (currentUserIdRaw == null) return Unauthorized(new { message = "Invalid authentication token." });
-            var currentUserId = currentUserIdRaw.Value;
-
-            var invitation = await _context.TeamInvitations
-                .Include(ti => ti.Team)
-                .FirstOrDefaultAsync(ti => ti.Id == id);
-
-            if (invitation == null)
-                return NotFound(new { message = "Invitation not found." });
-
-            if (invitation.Team.LeaderId != currentUserId)
-                return Forbid();
-
-            if (invitation.Status != InvitationStatus.Pending)
-                return BadRequest(new { message = "This invitation is no longer pending." });
-
-            invitation.Status = InvitationStatus.Cancelled;
-            invitation.RespondedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Invitation cancelled successfully." });
-        }
+            => this.ToActionResult(await _matchmakingService.CancelInvitationAsync(TryGetCurrentUserId(), id));
     }
 }

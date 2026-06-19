@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Users, BookOpen, Clock } from "lucide-react";
+import { Users } from "lucide-react";
 
 export default function MentorDashboardPage() {
   return (
@@ -19,22 +19,6 @@ export default function MentorDashboardPage() {
             <div className="stat-label">View and review assigned teams</div>
           </div>
         </Link>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}><BookOpen size={24} /></div>
-          <div>
-            <div className="stat-value">Guidelines</div>
-            <div className="stat-label">Read mentor instructions</div>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: "rgba(244,63,94,0.15)", color: "#f43f5e" }}><Clock size={24} /></div>
-          <div>
-            <div className="stat-value">Schedule</div>
-            <div className="stat-label">Upcoming review sessions</div>
-          </div>
-        </div>
       </div>
     </div>
   );

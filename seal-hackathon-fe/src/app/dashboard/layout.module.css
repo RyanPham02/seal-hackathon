@@ -1,8 +1,8 @@
-.shell { display: flex; min-height: 100vh; background: var(--color-bg); }
+.shell { display: flex; min-height: 100dvh; background: var(--color-bg); }
 
 .main {
   flex: 1;
-  min-height: 100vh;
+  min-height: 100dvh;
   transition: margin-left var(--transition-base);
   background: var(--color-bg);
   position: relative;

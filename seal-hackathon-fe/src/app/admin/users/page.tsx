@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { Users, UserPlus, CheckCircle, XCircle, Mail, Shield, Building2 } from "lucide-react";
 import { App, Table, Tag, Button, Modal, Form, Input } from "antd";
@@ -37,15 +37,17 @@ interface CreateJudgeValues {
 }
 
 export default function UsersPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [isAdmin, setIsAdmin] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState("pending");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Per-row action guard (`approve-<id>` / `reject-<id>`) against double-clicks.
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [createdJudge, setCreatedJudge] = useState<CreatedJudge | null>(null);
 
   const loadUsers = useCallback(async () => {
@@ -85,23 +87,38 @@ export default function UsersPage() {
   }, [isAdmin, loadUsers]);
 
   const handleApprove = async (id: string) => {
+    if (busyAction) return;
+    setBusyAction(`approve-${id}`);
     try {
       await apiRequest(`/admin/users/${id}/approve`, { method: "PUT" });
       message.success("User approved successfully");
       await loadUsers();
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not approve user.");
+    } finally {
+      setBusyAction(null);
     }
   };
 
-  const handleReject = async (id: string) => {
-    try {
-      await apiRequest(`/admin/users/${id}/reject`, { method: "PUT" });
-      message.success("User rejected successfully");
-      await loadUsers();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : "Could not reject user.");
-    }
+  const handleReject = (record: UserItem) => {
+    modal.confirm({
+      title: `Reject ${record.name}?`,
+      content: "The user will be denied access to the platform.",
+      okText: "Reject",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBusyAction(`reject-${record.id}`);
+        try {
+          await apiRequest(`/admin/users/${record.id}/reject`, { method: "PUT" });
+          message.success("User rejected successfully");
+          await loadUsers();
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : "Could not reject user.");
+        } finally {
+          setBusyAction(null);
+        }
+      },
+    });
   };
 
   const handleCreateJudge = async (values: CreateJudgeValues) => {
@@ -139,8 +156,26 @@ export default function UsersPage() {
       title: 'Action', key: 'action', render: (_: unknown, record: UserItem) => (
         record.status === "Pending" ? (
           <div style={{ display: 'flex', gap: '8px' }}>
-            <Button size="small" type="primary" onClick={() => handleApprove(record.id)} icon={<CheckCircle size={14} />}>Approve</Button>
-            <Button size="small" danger onClick={() => handleReject(record.id)} icon={<XCircle size={14} />}>Reject</Button>
+            <Button
+              size="small"
+              type="primary"
+              loading={busyAction === `approve-${record.id}`}
+              disabled={busyAction !== null && busyAction !== `approve-${record.id}`}
+              onClick={() => handleApprove(record.id)}
+              icon={<CheckCircle size={14} />}
+            >
+              Approve
+            </Button>
+            <Button
+              size="small"
+              danger
+              loading={busyAction === `reject-${record.id}`}
+              disabled={busyAction !== null && busyAction !== `reject-${record.id}`}
+              onClick={() => handleReject(record)}
+              icon={<XCircle size={14} />}
+            >
+              Reject
+            </Button>
           </div>
         ) : <span style={{ color: "var(--color-text-3)" }}>No actions</span>
       )
@@ -189,6 +224,7 @@ export default function UsersPage() {
 
       <div className="card">
         <Table 
+          className="custom-antd-table"
           dataSource={activeTab === "pending" ? users.filter(u => u.status === "Pending") : users.filter(u => u.status === "Approved")} 
           columns={columns} 
           rowKey="id" 

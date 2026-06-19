@@ -1,0 +1,13 @@
+{
+  "topbar": {
+    "search_placeholder": "Search events, teams, documents…",
+    "change_language": "Change language",
+    "toggle_theme": "Toggle theme"
+  },
+  "menu": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "settings": "Settings",
+    "logout": "Logout"
+  }
+}

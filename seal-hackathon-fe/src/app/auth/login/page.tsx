@@ -5,7 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { App } from "antd";
 import { ArrowRight, Code2, Eye, EyeOff, Lock, Mail, Trophy } from "lucide-react";
-import { apiRequest, saveAuthSession } from "@/lib/api";
+import { apiRequest } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 import styles from "../auth.module.css";
 
 /**
@@ -30,24 +31,19 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectUrl = searchParams.get("redirect");
   const { message } = App.useApp();
+  const { user, isLoading: authLoading, refresh } = useAuth();
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ email: "", password: "", remember: false });
 
+  // If the user is already signed in (cookie still valid), bounce them out of
+  // the login page once the AuthProvider finishes its bootstrap check.
   useEffect(() => {
-    const stored = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
-    if (stored) {
-      let fallback = "/dashboard";
-      try {
-        const user = JSON.parse(stored);
-        fallback = user.roles?.includes("Admin") ? "/admin" : "/dashboard";
-      } catch {
-        fallback = "/dashboard";
-      }
-      router.push(getSafeRedirect(redirectUrl, fallback));
-    }
-  }, [router, redirectUrl]);
+    if (authLoading || !user) return;
+    const fallback = user.roles.includes("Admin") ? "/admin" : "/dashboard";
+    router.push(getSafeRedirect(redirectUrl, fallback));
+  }, [authLoading, user, router, redirectUrl]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,20 +51,28 @@ function LoginForm() {
     setLoading(true);
 
     try {
-      const payload = await apiRequest<{
-        user: { id: string; fullName: string; email: string; roles: string[] };
-      }>("/Auth/login", {
+      await apiRequest("/Auth/login", {
         method: "POST",
-        body: JSON.stringify({ email: form.email, password: form.password }),
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          remember: form.remember,
+        }),
       });
 
-      const currentUser = saveAuthSession(payload, form.remember);
-      message.success("Logged in successfully!");
+      // Cookie is set; re-source identity from /Auth/me — never trust the
+      // login response shape as the source of truth for role gates.
+      const signedIn = await refresh();
+      if (!signedIn) {
+        setError("Signed in, but the server did not return a user. Try again.");
+        return;
+      }
 
-      const fallback = currentUser.roles.includes("Admin") ? "/admin" : "/dashboard";
+      message.success("Logged in successfully!");
+      const fallback = signedIn.roles.includes("Admin") ? "/admin" : "/dashboard";
       router.push(getSafeRedirect(redirectUrl, fallback));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Khong the dang nhap. Vui long thu lai.");
+      setError(err instanceof Error ? err.message : "Could not sign in. Please try again.");
     } finally {
       setLoading(false);
     }

@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState } from "react";
-import { Upload, Link as LinkIcon, GitBranch, Play, FileText, CheckCircle, AlertCircle, RefreshCw } from "lucide-react";
+import { Upload, Link as LinkIcon, GitBranch, Play, FileText, CheckCircle, AlertCircle, RefreshCw, Award, MessageSquare } from "lucide-react";
 import { App } from "antd";
 import { apiRequest, fetchCurrentUser } from "@/lib/api";
 
@@ -13,11 +13,33 @@ type TeamDto = {
   category: {
     categoryId: string;
     categoryName: string;
+    eventName?: string | null;
   };
   currentRound: {
     roundId: string;
     roundName: string;
+    submissionDeadline?: string | null;
   } | null;
+};
+
+type CriterionFeedbackDto = {
+  criteriaName: string;
+  scoreValue: number;
+  maxScore: number;
+  weight: number;
+  comment?: string | null;
+};
+
+type JudgeFeedbackDto = {
+  judgeName: string;
+  totalScore: number;
+  criteria: CriterionFeedbackDto[];
+};
+
+type EvaluationDto = {
+  isScored: boolean;
+  averageScore: number;
+  judges: JudgeFeedbackDto[];
 };
 
 type SubmissionDto = {
@@ -29,6 +51,7 @@ type SubmissionDto = {
     roundId: string;
     roundName: string;
   };
+  evaluation?: EvaluationDto | null;
 };
 
 export default function SubmissionsPage() {
@@ -44,6 +67,7 @@ export default function SubmissionsPage() {
   const [team, setTeam] = useState<TeamDto | null>(null);
   const [currentUserId, setCurrentUserId] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [evaluation, setEvaluation] = useState<EvaluationDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -67,6 +91,7 @@ export default function SubmissionsPage() {
 
         if (currentSubmission) {
           setIsSubmitted(true);
+          setEvaluation(currentSubmission.evaluation?.isScored ? currentSubmission.evaluation : null);
           setForm((current) => ({
             ...current,
             repositoryUrl: currentSubmission.repositoryUrl ?? "",
@@ -76,6 +101,7 @@ export default function SubmissionsPage() {
           }));
         } else {
           setIsSubmitted(false);
+          setEvaluation(null);
         }
       }
     } catch (err) {
@@ -174,7 +200,93 @@ export default function SubmissionsPage() {
         {isSubmitted && <span className="badge badge-success"><CheckCircle size={14} style={{ marginRight: 4 }} /> Submitted</span>}
       </div>
 
+      {evaluation && (
+        <div className="glass-card" style={{ marginBottom: "1.5rem" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+            <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <Award size={18} style={{ color: "var(--color-primary)" }} /> Score & Feedback
+            </h3>
+            <span className="badge badge-success" style={{ fontSize: "1rem", padding: "0.35rem 0.85rem" }}>
+              {evaluation.averageScore.toFixed(2)} pts
+            </span>
+          </div>
+          <p style={{ margin: "0 0 1rem 0", fontSize: "0.85rem", color: "var(--color-text-2)" }}>
+            Your submission has been evaluated by {evaluation.judges.length} judge{evaluation.judges.length > 1 ? "s" : ""}.
+            The overall score is the average of the judges&apos; weighted totals.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {evaluation.judges.map((judge, judgeIndex) => (
+              <div key={judgeIndex} style={{ border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                  <strong style={{ fontSize: "0.9rem" }}>{judge.judgeName}</strong>
+                  <span className="badge badge-primary">{judge.totalScore.toFixed(2)} pts</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {judge.criteria.map((criterion, criterionIndex) => (
+                    <div key={criterionIndex} style={{ fontSize: "0.85rem" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span style={{ color: "var(--color-text-2)" }}>{criterion.criteriaName}</span>
+                        <span>{criterion.scoreValue}/{criterion.maxScore} (weight {criterion.weight}%)</span>
+                      </div>
+                      {criterion.comment && (
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "0.4rem", marginTop: "0.25rem", color: "var(--color-text-2)", fontStyle: "italic" }}>
+                          <MessageSquare size={13} style={{ flexShrink: 0, marginTop: 2 }} />
+                          <span>{criterion.comment}</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="glass-card">
+        {team?.currentRound && (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "1.25rem",
+              background: "var(--color-surface-2)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              padding: "1.25rem",
+              marginBottom: "1.5rem",
+            }}
+          >
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Competition</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-text-1)", marginTop: "0.25rem" }}>
+                {team.category?.eventName || "SEAL Hackathon"}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Active Round</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-text-1)", marginTop: "0.25rem" }}>
+                {team.currentRound.roundName}
+              </div>
+            </div>
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)", textTransform: "uppercase", fontWeight: 600, letterSpacing: "0.05em" }}>Submission Deadline</span>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "var(--color-warning)", marginTop: "0.25rem" }}>
+                {team.currentRound.submissionDeadline
+                  ? new Intl.DateTimeFormat("en-US", {
+                      month: "short",
+                      day: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }).format(new Date(team.currentRound.submissionDeadline))
+                  : "No deadline set"}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", alignItems: "flex-start", gap: "1rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "var(--radius-md)", padding: "1rem", marginBottom: "1.5rem" }}>
           <AlertCircle size={20} style={{ color: "var(--color-primary)", flexShrink: 0, marginTop: 2 }} />
           <div>

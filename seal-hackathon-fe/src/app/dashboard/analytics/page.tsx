@@ -62,8 +62,14 @@ export default function AnalyticsPage() {
 
   const exportAnalyticsCSV = () => {
     if (!data) return;
+    // Quote + escape cells, and neutralize leading formula characters (CSV injection).
+    const csvCell = (cell: string | number) => {
+      let value = String(cell);
+      if (/^[=+\-@]/.test(value)) value = `'${value}`;
+      return `"${value.replace(/"/g, '""')}"`;
+    };
     const header = "Criterion,ICC,Agreement,AvgScore\n";
-    const rows = data.byCriterion.map(d => `${d.criterion},${d.icc ?? "N/A"},${d.agreement},${d.avgScore}`).join("\n");
+    const rows = data.byCriterion.map(d => [d.criterion, d.icc ?? "N/A", d.agreement, d.avgScore].map(csvCell).join(",")).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

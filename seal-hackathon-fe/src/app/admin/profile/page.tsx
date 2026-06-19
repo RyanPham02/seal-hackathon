@@ -4,9 +4,14 @@ import { useEffect, useState } from "react";
 import { User, Save, Upload, Mail, GraduationCap, Phone, Lock } from "lucide-react";
 import { App } from "antd";
 import { CurrentUser, apiRequest, fetchCurrentUser } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from "@/lib/constants";
+
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 
 export default function AdminProfilePage() {
   const { message } = App.useApp();
+  const { refresh } = useAuth();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -33,7 +38,7 @@ export default function AdminProfilePage() {
 
     setSaving(true);
     try {
-      const updated = await apiRequest<CurrentUser>("/Auth/profile", {
+      await apiRequest<CurrentUser>("/Auth/profile", {
         method: "PUT",
         body: JSON.stringify({
           fullName: user.fullName,
@@ -42,10 +47,10 @@ export default function AdminProfilePage() {
         }),
       });
 
-      setUser(updated);
-      localStorage.setItem("currentUser", JSON.stringify(updated));
-      sessionStorage.removeItem("currentUser");
-      window.dispatchEvent(new Event("storage"));
+      // Re-source from /Auth/me so the local user state never trusts a
+      // hand-crafted client object — the cookie-backed server is the truth.
+      const refreshed = await refresh();
+      if (refreshed) setUser(refreshed);
       message.success("Profile updated successfully.");
     } catch (err) {
       message.error(err instanceof Error ? err.message : "Could not update profile.");
@@ -58,10 +63,21 @@ export default function AdminProfilePage() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
+    if (file.size > MAX_AVATAR_BYTES) {
+      message.error("Avatar image must be smaller than 2 MB.");
+      e.target.value = "";
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      localStorage.setItem(`avatar_${user.email}`, dataUrl);
+      try {
+        localStorage.setItem(`avatar_${user.email}`, dataUrl);
+      } catch {
+        message.error("Could not save the avatar — local storage is full. Try a smaller image.");
+        return;
+      }
       setAvatarUrl(dataUrl);
       window.dispatchEvent(new Event("storage"));
       message.success("Avatar updated successfully.");
@@ -74,6 +90,11 @@ export default function AdminProfilePage() {
 
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
       message.error("Password confirmation does not match.");
+      return;
+    }
+
+    if (!PASSWORD_PATTERN.test(passwordForm.newPassword)) {
+      message.error(PASSWORD_RULE_MESSAGE);
       return;
     }
 

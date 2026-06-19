@@ -25,6 +25,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/**
+ * Error thrown for non-OK API responses. Carries the HTTP status so callers
+ * can distinguish auth failures (401/403) from transient/network problems —
+ * a network blip must never be treated as an expired session.
+ * `status` is 0 for client-side failures (timeout/abort).
+ */
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export function isAuthError(error: unknown): boolean {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
+const REQUEST_TIMEOUT_MS = 20_000;
 
 async function parseResponse<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -58,7 +76,7 @@ async function parseResponse<T>(response: Response): Promise<T> {
       }
     }
 
-    throw new Error(message);
+    throw new ApiError(message, response.status);
   }
 
   return data as T;
@@ -71,13 +89,37 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: "include",
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  return parseResponse<T>(response);
+  // Combine the caller's signal (if any) with our timeout signal so BOTH can
+  // cancel the fetch. Plain `options.signal ?? controller.signal` was a bug:
+  // when the caller passed their own signal, the 20s timer fired but the fetch
+  // wasn't listening to it.
+  const combinedSignal = options.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: "include",
+      signal: combinedSignal,
+    });
+
+    return await parseResponse<T>(response);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      // Distinguish our 20s timeout from a caller-initiated cancel. If the
+      // caller's signal aborted, surface that as-is; otherwise it was our timer.
+      if (options.signal?.aborted) throw err;
+      throw new ApiError("Request timed out. Please check your connection and try again.", 0);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function apiUpload<T>(path: string, formData: FormData) {
@@ -96,7 +138,7 @@ export async function apiDownload(path: string): Promise<Blob> {
   });
 
   if (!response.ok) {
-    throw new Error(`Download failed with status ${response.status}`);
+    throw new ApiError(`Download failed with status ${response.status}`, response.status);
   }
 
   return response.blob();
@@ -135,34 +177,11 @@ export function toCurrentUser(user: {
   };
 }
 
-export function saveAuthSession(
-  payload: {
-    user: {
-      id: string;
-      fullName?: string;
-      name?: string;
-      email: string;
-      roles?: string[];
-      role?: string;
-      phoneNumber?: string | null;
-      studentCode?: string | null;
-      schoolName?: string | null;
-      studentType?: string | null;
-    };
-  },
-  remember: boolean,
-) {
-  const currentUser = toCurrentUser(payload.user);
-  const uiStorage = remember ? localStorage : sessionStorage;
-  const otherStorage = remember ? sessionStorage : localStorage;
-
-  uiStorage.setItem("currentUser", JSON.stringify(currentUser));
-  otherStorage.removeItem("currentUser");
-  window.dispatchEvent(new Event("storage"));
-
-  return currentUser;
-}
-
+// Identity comes strictly from the backend cookie + /Auth/me. We deliberately
+// do NOT mirror `currentUser` into localStorage/sessionStorage — client storage
+// is trivially forgeable, so treating it as the source of truth for role gates
+// was a trust-boundary bug. The AuthProvider holds the in-memory user; consumers
+// read it via useAuth(). See memory/auth-trust-boundary.md.
 export async function fetchCurrentUser() {
   const user = await apiRequest<{
     id: string;
@@ -177,35 +196,14 @@ export async function fetchCurrentUser() {
     programmingLanguages?: string[];
   }>("/Auth/me");
 
-  const currentUser = toCurrentUser(user);
-  const serialized = JSON.stringify(currentUser);
-
-  // Refresh whichever storage the user is currently persisted in so we honour
-  // the original "remember me" choice. Never promote a sessionStorage-only
-  // login (remember = false) into localStorage.
-  if (localStorage.getItem("currentUser") !== null) {
-    localStorage.setItem("currentUser", serialized);
-  } else if (sessionStorage.getItem("currentUser") !== null) {
-    sessionStorage.setItem("currentUser", serialized);
-  } else {
-    // No prior client-side record (e.g. cookie-only session): default to the
-    // non-persistent store so we don't silently create a "remembered" login.
-    sessionStorage.setItem("currentUser", serialized);
-  }
-
-  window.dispatchEvent(new Event("storage"));
-
-  return currentUser;
+  return toCurrentUser(user);
 }
 
 export async function clearAuthSession() {
-  localStorage.removeItem("currentUser");
-  sessionStorage.removeItem("currentUser");
-  window.dispatchEvent(new Event("storage"));
-
   try {
     await apiRequest("/Auth/logout", { method: "POST" });
   } catch {
-    // Local UI state is already cleared; logout may be unavailable on older backends.
+    // Logout may be unavailable on older backends; the AuthProvider will still
+    // drop the in-memory user, which is the only thing the UI trusts.
   }
 }

@@ -1,13 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
-import { Calendar, ChevronLeft, Plus, Trash2, GripVertical, Clock, Target, Shield } from "lucide-react";
+import { Calendar, ChevronLeft, Plus, Trash2, GripVertical, Clock, Target } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App } from "antd";
 import { apiRequest, fetchCurrentUser } from "@/lib/api";
+import { TRACKS_OPTIONS } from "@/lib/constants";
 
-const TRACKS_OPTIONS = ["AI & Machine Learning", "Web Development", "Mobile App", "Cybersecurity", "Open Innovation"];
-const SEASONS = ["Spring", "Summer", "Fall"];
+function toApiDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
 
 export default function CreateEventPage() {
   const router = useRouter();
@@ -33,10 +37,13 @@ export default function CreateEventPage() {
         router.replace("/dashboard");
       });
   }, [router, message]);
+
+  // Only fields the backend actually persists are collected here.
   const [form, setForm] = useState({
-    name: "", season: "Spring", year: new Date().getFullYear().toString(),
-    description: "", maxTeamSize: "5", minTeamSize: "3",
-    registrationDeadline: "", submissionDeadline: "", resultDate: "",
+    name: "",
+    description: "",
+    startDate: "",
+    endDate: "",
   });
   const [rounds, setRounds] = useState([
     { id: 1, name: "Qualifying Round", topN: "10", deadline: "" },
@@ -62,24 +69,40 @@ export default function CreateEventPage() {
     setSelectedTracks(sel => sel.includes(t) ? sel.filter(x => x !== t) : [...sel, t]);
 
   const handleCreateEvent = async () => {
-    if (!form.name) {
-      message.error("Please enter an event name.");
+    if (!form.name.trim()) {
+      message.error("Step 1: please enter an event name.");
+      setStep(1);
       return;
     }
 
-    if (!form.registrationDeadline || !form.resultDate) {
-      message.error("Start date and end date are required.");
+    if (!form.startDate || !form.endDate) {
+      message.error("Step 1: start date and end date are required.");
+      setStep(1);
       return;
     }
 
-    if (selectedTracks.length === 0) {
-      message.error("Select at least one track/category.");
+    if (new Date(form.endDate) <= new Date(form.startDate)) {
+      message.error("Step 1: end date must be after the start date.");
+      setStep(1);
       return;
     }
 
     const roundsToCreate = rounds.filter((round) => round.name.trim() && round.deadline);
     if (roundsToCreate.length !== rounds.length) {
-      message.error("Every round needs a name and submission deadline.");
+      message.error("Step 2: every round needs a name and submission deadline.");
+      setStep(2);
+      return;
+    }
+
+    if (selectedTracks.length === 0) {
+      message.error("Step 3: select at least one track/category.");
+      setStep(3);
+      return;
+    }
+
+    if (criteria.some((c) => !c.name.trim())) {
+      message.error("Step 4: every criterion needs a name.");
+      setStep(4);
       return;
     }
 
@@ -90,45 +113,58 @@ export default function CreateEventPage() {
         body: JSON.stringify({
           eventName: form.name.trim(),
           description: form.description.trim() || null,
-          startDate: form.registrationDeadline,
-          endDate: form.resultDate,
+          startDate: toApiDate(form.startDate),
+          endDate: toApiDate(form.endDate),
         }),
       });
 
-      const createdRounds = await Promise.all(roundsToCreate.map((round, index) =>
-        apiRequest<{ roundId: string }>(`/events/${createdEvent.id}/rounds`, {
-          method: "POST",
-          body: JSON.stringify({
-            roundName: round.name.trim(),
-            submissionDeadline: round.deadline,
-            roundOrder: index + 1,
-            maxTeamsAdvancing: Number(round.topN) || 0,
-          }),
-        })
-      ));
-
-      await Promise.all(selectedTracks.map((track) =>
-        apiRequest(`/events/${createdEvent.id}/categories`, {
-          method: "POST",
-          body: JSON.stringify({
-            categoryName: track,
-            description: null,
-          }),
-        })
-      ));
-
-      await Promise.all(createdRounds.flatMap((round) =>
-        criteria.map((criterion) =>
-          apiRequest(`/rounds/${round.roundId}/criteria`, {
+      // The event now exists; if any follow-up call fails we tell the admin
+      // exactly what happened instead of letting a retry create a duplicate.
+      try {
+        const createdRounds = await Promise.all(roundsToCreate.map((round, index) =>
+          apiRequest<{ roundId: string }>(`/events/${createdEvent.id}/rounds`, {
             method: "POST",
             body: JSON.stringify({
-              criteriaName: criterion.name.trim(),
-              maxScore: 100,
-              weight: criterion.weight,
+              roundName: round.name.trim(),
+              submissionDeadline: toApiDate(round.deadline),
+              roundOrder: index + 1,
+              maxTeamsAdvancing: Number(round.topN) || 0,
             }),
           })
-        )
-      ));
+        ));
+
+        await Promise.all(selectedTracks.map((track) =>
+          apiRequest(`/events/${createdEvent.id}/categories`, {
+            method: "POST",
+            body: JSON.stringify({
+              categoryName: track,
+              description: null,
+            }),
+          })
+        ));
+
+        await Promise.all(createdRounds.flatMap((round) =>
+          criteria.map((criterion) =>
+            apiRequest(`/rounds/${round.roundId}/criteria`, {
+              method: "POST",
+              body: JSON.stringify({
+                criteriaName: criterion.name.trim(),
+                maxScore: 100,
+                weight: criterion.weight,
+              }),
+            })
+          )
+        ));
+      } catch (configErr) {
+        message.warning(
+          `The event was created, but part of its configuration failed: ${
+            configErr instanceof Error ? configErr.message : "unknown error"
+          }. Finish setting it up from Admin → Events instead of creating it again.`,
+          8,
+        );
+        router.push("/dashboard/events");
+        return;
+      }
 
       message.success("Event created successfully.");
       router.push("/dashboard/events");
@@ -158,7 +194,7 @@ export default function CreateEventPage() {
         <div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-            <Link href="/dashboard/events"><button className="btn btn-ghost btn-sm btn-icon"><ChevronLeft size={16} /></button></Link>
+            <Link href="/dashboard/events"><button className="btn btn-ghost btn-sm btn-icon" aria-label="Back to events"><ChevronLeft size={16} /></button></Link>
             <h1 className="page-title">Create New Event</h1>
           </div>
           <p className="page-subtitle">Configure your SEAL hackathon event</p>
@@ -178,21 +214,9 @@ export default function CreateEventPage() {
           <h3 style={{ marginBottom: "1.5rem", fontSize: "1rem" }}>Event Details</h3>
           <div style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
             <div className="form-group">
-              <label className="form-label">Event Name</label>
+              <label className="form-label">Event Name *</label>
               <input className="form-input" placeholder="SEAL Spring 2026"
                 value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-              <div className="form-group">
-                <label className="form-label">Season</label>
-                <select className="form-select" value={form.season} onChange={e => setForm({...form, season: e.target.value})}>
-                  {SEASONS.map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Year</label>
-                <input className="form-input" type="number" value={form.year} onChange={e => setForm({...form, year: e.target.value})} />
-              </div>
             </div>
             <div className="form-group">
               <label className="form-label">Description</label>
@@ -201,29 +225,17 @@ export default function CreateEventPage() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div className="form-group">
-                <label className="form-label">Min Team Size</label>
-                <input className="form-input" type="number" min="1" max="10"
-                  value={form.minTeamSize} onChange={e => setForm({...form, minTeamSize: e.target.value})} />
+                <label className="form-label">Start Date & Time *</label>
+                <input className="form-input" type="datetime-local"
+                  value={form.startDate}
+                  onChange={e => setForm({...form, startDate: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">Max Team Size</label>
-                <input className="form-input" type="number" min="1" max="10"
-                  value={form.maxTeamSize} onChange={e => setForm({...form, maxTeamSize: e.target.value})} />
+                <label className="form-label">End Date & Time *</label>
+                <input className="form-input" type="datetime-local"
+                  value={form.endDate}
+                  onChange={e => setForm({...form, endDate: e.target.value})} />
               </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
-            {[
-                { label: "Start Date", key: "registrationDeadline" },
-                { label: "Submission Deadline",   key: "submissionDeadline" },
-                { label: "End Date",              key: "resultDate" },
-              ].map(f => (
-                <div key={f.key} className="form-group">
-                  <label className="form-label">{f.label}</label>
-                  <input className="form-input" type="date"
-                    value={(form as Record<string,string>)[f.key]}
-                    onChange={e => setForm({...form, [f.key]: e.target.value})} />
-                </div>
-              ))}
             </div>
           </div>
         </div>
@@ -238,7 +250,7 @@ export default function CreateEventPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             {rounds.map((r, i) => (
-              <div key={r.id} style={{ background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "1.25rem" }}>
+              <div key={r.id} style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)", padding: "1.25rem" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1rem" }}>
                   <GripVertical size={16} style={{ color: "var(--color-text-3)", cursor: "grab" }} />
                   <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--color-primary)", background: "rgba(99,102,241,0.1)", padding: "0.15rem 0.5rem", borderRadius: "var(--radius-sm)" }}>
@@ -249,7 +261,7 @@ export default function CreateEventPage() {
                       value={r.name} onChange={e => setRounds(rounds.map(x => x.id===r.id ? {...x, name: e.target.value} : x))} />
                   </div>
                   {rounds.length > 1 && (
-                    <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeRound(r.id)}>
+                    <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeRound(r.id)} aria-label={`Remove round ${i + 1}`}>
                       <Trash2 size={13} />
                     </button>
                   )}
@@ -257,13 +269,13 @@ export default function CreateEventPage() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                   <div className="form-group">
                     <label className="form-label"><Target size={11} /> Top N Teams to Advance</label>
-                    <input className="form-input" type="number" placeholder="10"
+                    <input className="form-input" type="number" min="1" placeholder="10"
                       value={r.topN} onChange={e => setRounds(rounds.map(x => x.id===r.id ? {...x, topN: e.target.value} : x))} />
                     <span className="form-hint">Top {r.topN || "?"} teams advance to next round</span>
                   </div>
                   <div className="form-group">
-                    <label className="form-label"><Clock size={11} /> Submission Deadline</label>
-                    <input className="form-input" type="date"
+                    <label className="form-label"><Clock size={11} /> Submission Deadline *</label>
+                    <input className="form-input" type="datetime-local"
                       value={r.deadline} onChange={e => setRounds(rounds.map(x => x.id===r.id ? {...x, deadline: e.target.value} : x))} />
                   </div>
                 </div>
@@ -283,7 +295,7 @@ export default function CreateEventPage() {
               <label key={t} style={{
                 display: "flex", alignItems: "center", gap: "0.75rem",
                 padding: "0.9rem 1rem",
-                background: selectedTracks.includes(t) ? "rgba(99,102,241,0.08)" : "rgba(15,23,42,0.4)",
+                background: selectedTracks.includes(t) ? "rgba(99,102,241,0.08)" : "var(--color-surface-2)",
                 border: `1px solid ${selectedTracks.includes(t) ? "rgba(99,102,241,0.4)" : "var(--color-border-2)"}`,
                 borderRadius: "var(--radius-md)", cursor: "pointer", transition: "all 0.15s",
               }}>
@@ -316,7 +328,7 @@ export default function CreateEventPage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {criteria.map(c => (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.9rem 1rem", background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.9rem 1rem", background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
                 <GripVertical size={15} style={{ color: "var(--color-text-3)", cursor: "grab", flexShrink: 0 }} />
                 <input className="form-input" style={{ flex: 1 }} value={c.name}
                   onChange={e => setCriteria(criteria.map(x => x.id===c.id ? {...x, name: e.target.value} : x))} />
@@ -325,7 +337,7 @@ export default function CreateEventPage() {
                     value={c.weight} onChange={e => setCriteria(criteria.map(x => x.id===c.id ? {...x, weight: +e.target.value} : x))} />
                   <span style={{ fontSize: "0.875rem", color: "var(--color-text-2)" }}>%</span>
                 </div>
-                <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeCriterion(c.id)}><Trash2 size={13} /></button>
+                <button className="btn btn-danger btn-icon btn-sm" onClick={() => removeCriterion(c.id)} aria-label={`Remove criterion ${c.name}`}><Trash2 size={13} /></button>
               </div>
             ))}
           </div>

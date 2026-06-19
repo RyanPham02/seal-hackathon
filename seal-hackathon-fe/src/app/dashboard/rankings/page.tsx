@@ -102,6 +102,12 @@ export default function RankingsPage() {
     void loadRankings();
   }, [roundId, categoryId]);
 
+  // Prefix cells that spreadsheet apps would interpret as formulas (CSV injection).
+  const sanitizeCsvCell = (cell: string | number) => {
+    const value = String(cell);
+    return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  };
+
   const exportCsv = () => {
     const rows = [
       ["Rank", "Team", "Category", "Score", "Submitted At"],
@@ -113,7 +119,7 @@ export default function RankingsPage() {
         item.submittedAt,
       ]),
     ];
-    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = rows.map((row) => row.map((cell) => `"${sanitizeCsvCell(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

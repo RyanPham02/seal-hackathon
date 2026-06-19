@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import React, { useEffect, useState } from "react";
 import { Typography, Table, Button, Card, Tag, Input, App } from "antd";
 import { StarOutlined, FileOutlined, SearchOutlined, EyeOutlined } from "@ant-design/icons";
@@ -57,7 +57,8 @@ export default function UserEventsPage() {
       render: (text: string, record: EventDto) => (
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{ padding: "8px", background: "var(--color-surface-2)", borderRadius: "6px" }}>
-            {record.status === "Active" ? <StarOutlined style={{color: "#60a5fa"}} /> : <FileOutlined style={{color: "#9ca3af"}} />}
+            {/* Backend reports running events as "Ongoing"; some older data uses "Active". */}
+            {record.status === "Active" || record.status === "Ongoing" ? <StarOutlined style={{color: "#60a5fa"}} /> : <FileOutlined style={{color: "#9ca3af"}} />}
           </div>
           <b>{text}</b>
         </div>
@@ -75,7 +76,7 @@ export default function UserEventsPage() {
       dataIndex: "status",
       key: "status",
       render: (text: string) => (
-        <Tag color={text === "Active" ? "processing" : "default"} style={{ borderRadius: "12px", padding: "2px 10px" }}>
+        <Tag color={text === "Active" || text === "Ongoing" ? "processing" : "default"} style={{ borderRadius: "12px", padding: "2px 10px" }}>
           {text}
         </Tag>
       )
@@ -114,6 +115,7 @@ export default function UserEventsPage() {
 
       <Card variant="borderless" styles={{ body: { padding: 0 } }} style={{ background: "transparent" }}>
         <Table
+          className="custom-antd-table"
           columns={columns}
           dataSource={filteredEvents}
           pagination={{ pageSize: 10 }}

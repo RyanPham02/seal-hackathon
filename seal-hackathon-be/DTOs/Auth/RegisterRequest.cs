@@ -23,5 +23,17 @@ namespace SEAL.NET.DTOs.Auth
         public string StudentCode { get; set; } = string.Empty;
 
         public string? SchoolName { get; set; }
+
+        [Required]
+        [Phone]
+        [MaxLength(30)]
+        public string PhoneNumber { get; set; } = string.Empty;
+
+        [Required]
+        public string DeveloperRole { get; set; } = string.Empty;
+
+        [Required]
+        [MinLength(1, ErrorMessage = "Select at least one programming language or technology.")]
+        public List<string> ProgrammingLanguages { get; set; } = new();
     }
 }

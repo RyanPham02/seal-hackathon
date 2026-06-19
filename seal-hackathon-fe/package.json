@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev -H 0.0.0.0 --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -12,6 +12,8 @@
     "@ant-design/icons": "^6.2.3",
     "antd": "^6.4.3",
     "framer-motion": "^12.40.0",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "i18next-http-backend": "^4.0.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
     "react": "19.2.4",
@@ -23,8 +25,10 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitalets/google-translate-api": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
+    "puppeteer": "^25.1.0",
     "typescript": "^5"
   }
 }

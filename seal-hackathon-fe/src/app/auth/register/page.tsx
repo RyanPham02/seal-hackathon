@@ -4,8 +4,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { App } from "antd";
-import { ArrowLeft, Building2, CheckCircle, Code2, GraduationCap, Lock, Mail, Trophy, User } from "lucide-react";
+import { ArrowLeft, Building2, CheckCircle, Code2, GraduationCap, Lock, Mail, Phone, Trophy, User } from "lucide-react";
 import { apiRequest } from "@/lib/api";
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from "@/lib/constants";
+import { DEVELOPER_ROLES, PROGRAMMING_LANGUAGES } from "@/lib/developerProfile";
 import styles from "../auth.module.css";
 import vnUniversities from "../../../data/vietnam_universities.json";
 
@@ -25,7 +27,19 @@ export default function RegisterPage() {
     studentId: "",
     university: "",
     customUniversity: "",
+    phoneNumber: "",
+    developerRole: "",
+    programmingLanguages: [] as string[],
   });
+
+  const toggleProgrammingLanguage = (language: string) => {
+    setForm((current) => ({
+      ...current,
+      programmingLanguages: current.programmingLanguages.includes(language)
+        ? current.programmingLanguages.filter((item) => item !== language)
+        : [...current.programmingLanguages, language],
+    }));
+  };
 
   const handleReview = (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,8 +49,28 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!PASSWORD_PATTERN.test(form.password)) {
+      message.error(PASSWORD_RULE_MESSAGE);
+      return;
+    }
+
     if (form.password !== form.confirmPassword) {
       message.error("Password confirmation does not match.");
+      return;
+    }
+
+    if (!form.phoneNumber.trim()) {
+      message.error("Please enter your phone number.");
+      return;
+    }
+
+    if (!form.developerRole) {
+      message.error("Please select your developer role.");
+      return;
+    }
+
+    if (form.programmingLanguages.length === 0) {
+      message.error("Please select at least one programming language or technology.");
       return;
     }
 
@@ -76,6 +110,9 @@ export default function RegisterPage() {
           studentType: studentType === "fpt" ? 0 : 1,
           studentCode: form.studentId,
           schoolName: finalSchoolName,
+          phoneNumber: form.phoneNumber.trim(),
+          developerRole: form.developerRole,
+          programmingLanguages: form.programmingLanguages,
         }),
       });
 
@@ -95,7 +132,7 @@ export default function RegisterPage() {
           <div className={styles.orb1} />
           <div className={styles.orb2} />
 
-          <div className={styles.card} style={{ maxWidth: 460 }}>
+          <div className={styles.card} style={{ maxWidth: 520 }}>
             <button 
               onClick={() => router.push("/auth/login")} 
               className="btn btn-ghost" 
@@ -140,6 +177,7 @@ export default function RegisterPage() {
                       <Lock size={16} className={styles.inputIcon} />
                       <input id="reg-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required />
                     </div>
+                    <span className="form-hint">{PASSWORD_RULE_MESSAGE}</span>
                   </div>
 
                   <div className="form-group">
@@ -147,6 +185,71 @@ export default function RegisterPage() {
                     <div className={styles.inputWrap}>
                       <Lock size={16} className={styles.inputIcon} />
                       <input id="confirm-pass" type="password" className={`form-input ${styles.inputWithIcon}`} placeholder="Confirm password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} required />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="phone-number">Phone Number</label>
+                    <div className={styles.inputWrap}>
+                      <Phone size={16} className={styles.inputIcon} />
+                      <input
+                        id="phone-number"
+                        type="tel"
+                        className={`form-input ${styles.inputWithIcon}`}
+                        placeholder="+84 912 345 678"
+                        value={form.phoneNumber}
+                        onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
+                        autoComplete="tel"
+                        maxLength={30}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className={styles.developerSection}>
+                    <div className={styles.developerHeading}>
+                      <Code2 size={18} />
+                      <div>
+                        <div className={styles.radioLabel}>Developer Profile</div>
+                        <div className={styles.radioSub}>Tell teammates how you like to build.</div>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="developer-role">Developer Role</label>
+                      <select
+                        id="developer-role"
+                        className="form-input"
+                        value={form.developerRole}
+                        onChange={(e) => setForm({ ...form, developerRole: e.target.value })}
+                        required
+                      >
+                        <option value="">Select your role</option>
+                        {DEVELOPER_ROLES.map((role) => (
+                          <option key={role} value={role}>{role}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Programming Languages &amp; Technologies</label>
+                      <div className={styles.languageOptions}>
+                        {PROGRAMMING_LANGUAGES.map((language) => {
+                          const selected = form.programmingLanguages.includes(language);
+                          return (
+                            <button
+                              type="button"
+                              key={language}
+                              aria-pressed={selected}
+                              onClick={() => toggleProgrammingLanguage(language)}
+                              className={`${styles.languageOption} ${selected ? styles.languageOptionSelected : ""}`}
+                            >
+                              {language}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="form-hint">Select at least one option.</span>
                     </div>
                   </div>
 
@@ -217,7 +320,7 @@ export default function RegisterPage() {
                 <h1 className={styles.title} style={{ fontSize: "1.3rem", marginBottom: "0.25rem" }}>Confirm your details</h1>
                 <p className={styles.subtitle}>Please verify your information before registering.</p>
 
-                <div style={{ background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border-2)", borderRadius: "var(--radius-md)", padding: "1.25rem", marginBottom: "1.5rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ background: "var(--color-surface-2)", border: "1px solid var(--color-border-2)", borderRadius: "var(--radius-md)", padding: "1.25rem", marginBottom: "1.5rem", fontSize: "0.9rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--color-text-3)" }}>Full Name</span>
                     <strong style={{ color: "var(--color-text)" }}>{form.fullName}</strong>
@@ -233,6 +336,20 @@ export default function RegisterPage() {
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--color-text-3)" }}>Student ID</span>
                     <strong style={{ color: "var(--color-text)" }}>{form.studentId}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Phone Number</span>
+                    <strong style={{ color: "var(--color-text)", textAlign: "right" }}>{form.phoneNumber}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Developer Role</span>
+                    <strong style={{ color: "var(--color-text)", textAlign: "right" }}>{form.developerRole}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                    <span style={{ color: "var(--color-text-3)" }}>Languages</span>
+                    <strong style={{ color: "var(--color-text)", textAlign: "right", maxWidth: "60%", overflowWrap: "anywhere" }}>
+                      {form.programmingLanguages.join(", ")}
+                    </strong>
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ color: "var(--color-text-3)" }}>University</span>

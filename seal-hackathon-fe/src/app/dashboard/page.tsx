@@ -7,6 +7,7 @@ import {
 import Link from "next/link";
 import styles from "./page.module.css";
 import { apiRequest } from "@/lib/api";
+import { useAuth } from "@/components/AuthProvider";
 import { App } from "antd";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -93,34 +94,40 @@ interface MappedEvent {
   endDate: string;
 }
 
+interface InvitationResponse {
+  id: string;
+  teamId: string;
+  teamName: string;
+  inviterUserId: string;
+  inviterUserName: string;
+  inviteeUserId: string;
+  inviteeUserName: string;
+  inviteeUserEmail: string;
+  status: string;
+  message?: string;
+  createdAt: string;
+}
+
+interface TeamDto {
+  teamId: string;
+  teamName: string;
+  leaderId: string;
+}
+
 export default function DashboardPage() {
   const { message } = App.useApp();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"all" | "active" | "upcoming">("all");
   const [events, setEvents] = useState<MappedEvent[]>([]);
+  const [receivedInvites, setReceivedInvites] = useState<InvitationResponse[]>([]);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [deadlines, setDeadlines] = useState<DeadlineItem[]>([]);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    const readRole = () => {
-      const stored = localStorage.getItem("currentUser") || sessionStorage.getItem("currentUser");
-      if (!stored) {
-        setIsAdmin(false);
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stored) as { roles?: string[]; role?: string };
-        const roles = parsed.roles?.length ? parsed.roles : parsed.role ? [parsed.role] : [];
-        setIsAdmin(roles.includes("Admin"));
-      } catch {
-        setIsAdmin(false);
-      }
-    };
-    readRole();
-    window.addEventListener("storage", readRole);
-    return () => window.removeEventListener("storage", readRole);
-  }, []);
+  const [myTeam, setMyTeam] = useState<TeamDto | null>(null);
+  const userRoles = user?.roles ?? [];
+  const isAdmin = userRoles.includes("Admin");
+  const canJudge = isAdmin || userRoles.includes("Judge");
+  const currentUserId = user?.id ?? null;
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -196,8 +203,28 @@ export default function DashboardPage() {
       }
     };
 
+    const loadInvitations = async () => {
+      try {
+        const invites = await apiRequest<InvitationResponse[]>("/teams/invitations/received");
+        setReceivedInvites(invites.filter((inv) => inv.status === "Pending"));
+      } catch {
+        setReceivedInvites([]);
+      }
+    };
+
+    const loadMyTeam = async () => {
+      try {
+        const team = await apiRequest<TeamDto>("/teams/my-team");
+        setMyTeam(team);
+      } catch {
+        setMyTeam(null);
+      }
+    };
+
     loadDashboard();
     loadActivity();
+    loadInvitations();
+    loadMyTeam();
   }, [message]);
 
   const filteredEvents = useMemo(() => {
@@ -205,6 +232,27 @@ export default function DashboardPage() {
       activeTab === "all" ? true : e.status.toLowerCase() === activeTab.toLowerCase()
     );
   }, [activeTab, events]);
+
+  const handleAcceptInvite = async (id: string, teamName: string) => {
+    try {
+      await apiRequest(`/teams/invitations/${id}/accept`, { method: "POST" });
+      message.success(`You have successfully joined team ${teamName}!`);
+      window.location.reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to accept invitation.");
+    }
+  };
+
+  const handleDeclineInvite = async (id: string) => {
+    try {
+      await apiRequest(`/teams/invitations/${id}/reject`, { method: "POST" });
+      message.success("Invitation declined.");
+      const invites = await apiRequest<InvitationResponse[]>("/teams/invitations/received");
+      setReceivedInvites(invites.filter((inv) => inv.status === "Pending"));
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "Failed to decline invitation.");
+    }
+  };
 
   const dynamicStats = [
     {
@@ -228,7 +276,7 @@ export default function DashboardPage() {
   return (
     <div>
       {/* Header */}
-      <div className="page-header">
+      <div className="page-header" style={{ marginBottom: receivedInvites.length > 0 ? "1.5rem" : "2rem" }}>
         <div>
           <h1 className="page-title">Dashboard Overview</h1>
           <p className="page-subtitle">Welcome back · {metrics?.upcomingEvent || "SEAL Hackathon"} is live 🚀</p>
@@ -241,6 +289,68 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Pending Invitations Banner */}
+      {receivedInvites.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "2rem" }}>
+          {receivedInvites.map((invite) => {
+            const isJoinRequest = myTeam && myTeam.teamId === invite.teamId && myTeam.leaderId === currentUserId;
+            return (
+              <div
+                key={invite.id}
+                className="glass-card"
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  borderLeft: "4px solid var(--color-primary)",
+                  padding: "1.25rem 1.5rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+                  <div
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: "50%",
+                      background: "rgba(99,102,241,0.1)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--color-primary)",
+                    }}
+                  >
+                    <Users size={20} />
+                  </div>
+                  <div>
+                    <h4 style={{ margin: 0, fontSize: "1.1rem", color: "var(--color-text-1)" }}>
+                      {isJoinRequest ? "Join Request" : "Team Invitation"}
+                    </h4>
+                    <p style={{ margin: "0.2rem 0 0", color: "var(--color-text-3)", fontSize: "0.9rem" }}>
+                      <strong>{invite.inviterUserName}</strong> {isJoinRequest ? "has requested to join your team" : `has invited you to join team ${invite.teamName}`}.
+                      {invite.message && <span style={{ fontStyle: "italic", display: "block", marginTop: "0.25rem", color: "var(--color-text-2)" }}>&quot;{invite.message}&quot;</span>}
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "0.75rem" }}>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => handleAcceptInvite(invite.id, invite.teamName)}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleDeclineInvite(invite.id)}
+                  >
+                    Decline
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid-4" style={{ marginBottom: "2rem" }}>
@@ -356,9 +466,10 @@ export default function DashboardPage() {
               {[
                 ...(isAdmin ? [{ label: "Create Event", href: "/dashboard/events/create", icon: Calendar, color: "#6366f1" }] : []),
                 { label: "Register Team",   href: "/dashboard/teams",   icon: Users,   color: "#8b5cf6" },
-                { label: "Score Submissions",href: "/dashboard/judging",       icon: Target,  color: "#06b6d4" },
+                // Scoring is only accessible to Judges/Admins — don't tease it to Members.
+                ...(canJudge ? [{ label: "Score Submissions", href: "/dashboard/judging", icon: Target, color: "#06b6d4" }] : []),
                 { label: "View Rankings",   href: "/dashboard/rankings",       icon: Trophy,  color: "#f59e0b" },
-                { label: "Manage Prizes",   href: "/dashboard/prizes",         icon: Award,   color: "#f43f5e" },
+                { label: "View Prizes",     href: "/dashboard/prizes",         icon: Award,   color: "#f43f5e" },
               ].map(q => {
                 const Icon = q.icon;
                 return (

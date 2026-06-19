@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import React, { use, useState, useEffect } from "react";
 import { ChevronLeft, Users, Crown, Mail, Shield, BookOpen, Target, ExternalLink } from "lucide-react";
 import Link from "next/link";
@@ -133,7 +133,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {team.members.map((m) => (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.9rem 1rem", background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "1rem", padding: "0.9rem 1rem", background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
                 <div className="avatar-placeholder" style={{ width: 40, height: 40, fontSize: "0.9rem", flexShrink: 0 }}>
                   {m.name.charAt(0)}
                 </div>
@@ -162,7 +162,7 @@ export default function TeamDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
             {team.submissions.map((s) => (
-              <div key={s.submissionId} style={{ padding: "1rem", background: "rgba(15,23,42,0.5)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+              <div key={s.submissionId} style={{ padding: "1rem", background: "var(--color-surface-2)", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", flexWrap: "wrap", gap: "0.5rem" }}>
                   <strong style={{ fontSize: "0.9rem" }}>{s.roundName}</strong>
                   <span style={{ fontSize: "0.75rem", color: "var(--color-text-3)" }}>

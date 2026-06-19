@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Calendar,
@@ -23,7 +23,7 @@ import {
   Bell,
 } from "lucide-react";
 import styles from "./Sidebar.module.css";
-import { clearAuthSession, type CurrentUser } from "@/lib/api";
+import { useAuth } from "./AuthProvider";
 
 type NavItem = {
   icon: React.ElementType;
@@ -90,6 +90,7 @@ const ALL_NAV_SECTIONS: NavSection[] = [
     title: "System",
     items: [
       { icon: Users, label: "User Approvals", href: "/admin/users", roles: ["Admin"] },
+      { icon: FileText, label: "Audit Logs", href: "/admin/audit-logs", roles: ["Admin"] },
       {
         icon: Bell,
         label: "System Notifications",
@@ -116,47 +117,28 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user: currentUser, logout } = useAuth();
 
   const isAdminPortal = pathname.startsWith("/admin");
 
-  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
 
-  const loadUser = useCallback(() => {
-    const stored =
-      localStorage.getItem("currentUser") ||
-      sessionStorage.getItem("currentUser");
-
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as CurrentUser;
-
-        setCurrentUser(parsed);
-        setAvatar(localStorage.getItem(`avatar_${parsed.email}`));
-      } catch {
-        setCurrentUser(null);
-        setAvatar(null);
-      }
-    } else {
-      setCurrentUser(null);
-      setAvatar(null);
-    }
-  }, []);
-
+  // Avatar is a UI-only per-email preference; never drives identity/authz.
   useEffect(() => {
-    const id = window.setTimeout(loadUser, 0);
+    if (!currentUser) {
+      setAvatar(null);
+      return;
+    }
+    setAvatar(localStorage.getItem(`avatar_${currentUser.email}`));
+  }, [currentUser]);
 
-    window.addEventListener("storage", loadUser);
-
-    return () => {
-      window.clearTimeout(id);
-      window.removeEventListener("storage", loadUser);
-    };
-  }, [loadUser]);
-
-  const handleLogout = () => {
-    void clearAuthSession();
-    router.push("/auth/login");
+  const handleLogout = async () => {
+    // Capture role BEFORE logout — once logout() resolves, currentUser is null.
+    // Admins land on the public landing page; non-admins go back to login so
+    // they can hop back into their dashboard quickly.
+    const wasAdmin = currentUser?.roles.includes("Admin") ?? false;
+    await logout();
+    router.push(wasAdmin ? "/" : "/auth/login");
   };
 
   const userRoles = currentUser?.roles?.length
@@ -198,6 +180,7 @@ export default function Sidebar({
           ...section,
           items: [
             { icon: Users, label: "User Approvals", href: "/admin/users", roles: ["Admin"] },
+            { icon: FileText, label: "Audit Logs", href: "/admin/audit-logs", roles: ["Admin"] },
             {
               icon: Bell,
               label: "System Notifications",
@@ -333,6 +316,7 @@ export default function Sidebar({
             className={styles.collapseBtn}
             onClick={onToggle}
             style={collapsed ? { margin: 0, padding: "0.5rem" } : {}}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? <Menu size={18} /> : <ChevronLeft size={16} />}
           </button>
@@ -453,6 +437,7 @@ export default function Sidebar({
           <button
             className={styles.logoutBtn}
             title="Logout"
+            aria-label="Logout"
             onClick={handleLogout}
             style={{ flexShrink: 0 }}
           >
