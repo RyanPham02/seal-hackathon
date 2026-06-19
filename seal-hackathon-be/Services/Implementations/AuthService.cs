@@ -44,6 +44,23 @@ namespace SEAL.NET.Services.Implementations
 
         public async Task<ServiceResult> RegisterAsync(RegisterRequest model)
         {
+            if (!Enum.TryParse<DeveloperRole>(model.DeveloperRole.Trim(), ignoreCase: true, out var developerRole)
+                || !Enum.IsDefined(typeof(DeveloperRole), developerRole))
+            {
+                return ServiceResult.BadRequest("DeveloperRole must be one of: Backend, Frontend, Fullstack.");
+            }
+
+            if (!DeveloperProfileOptions.TryNormalizeLanguages(
+                    model.ProgrammingLanguages,
+                    out var languagesCsv,
+                    out var languagesError))
+            {
+                return ServiceResult.BadRequestBody(new { message = languagesError });
+            }
+
+            if (string.IsNullOrWhiteSpace(languagesCsv))
+                return ServiceResult.BadRequest("Select at least one programming language or technology.");
+
             var userExists = await _userManager.FindByEmailAsync(model.Email);
             if (userExists != null)
                 return ServiceResult.BadRequest("Email is already used.");
@@ -74,6 +91,9 @@ namespace SEAL.NET.Services.Implementations
                 StudentType = model.StudentType,
                 StudentCode = string.IsNullOrWhiteSpace(model.StudentCode) ? null : model.StudentCode.Trim(),
                 SchoolName = model.SchoolName,
+                PhoneNumber = model.PhoneNumber.Trim(),
+                DeveloperRole = developerRole,
+                ProgrammingLanguages = languagesCsv,
                 IsApproved = true
             };
 

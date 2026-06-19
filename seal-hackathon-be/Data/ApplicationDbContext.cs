@@ -35,11 +35,11 @@ namespace SEAL.NET.Data
 
             var dateTimeConverter = new ValueConverter<DateTime, DateTime>(
                 value => DateTime.SpecifyKind(value, DateTimeKind.Unspecified),
-                value => value);
+                value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
             var nullableDateTimeConverter = new ValueConverter<DateTime?, DateTime?>(
                 value => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified) : value,
-                value => value);
+                value => value.HasValue ? DateTime.SpecifyKind(value.Value, DateTimeKind.Utc) : value);
 
             foreach (var entityType in builder.Model.GetEntityTypes())
             {

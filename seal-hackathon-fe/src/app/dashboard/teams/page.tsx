@@ -24,6 +24,9 @@ type TeamDto = {
     categoryId: string;
     categoryName: string;
   };
+  eventStatus?: string | null;
+  finalRank?: number | null;
+  finalPrize?: string | null;
   currentRound: {
     roundId: string;
     roundName: string;
@@ -375,15 +378,18 @@ export default function TeamsPage() {
   };
 
   const handleLeaveTeam = () => {
+    const isDisband = isLeader && (myTeam?.status === "Champion" || myTeam?.status === "Eliminated" || myTeam?.eventStatus === "Completed");
     modal.confirm({
-      title: "Leave team",
-      content: "Are you sure you want to leave this team?",
-      okText: "Leave",
+      title: isDisband ? "Disband team" : "Leave team",
+      content: isDisband 
+        ? "Are you sure you want to disband this team? All members will be removed and the team will be closed." 
+        : "Are you sure you want to leave this team?",
+      okText: isDisband ? "Disband" : "Leave",
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await apiRequest("/teams/leave", { method: "POST" });
-          message.success("You have left the team.");
+          message.success(isDisband ? "Team disbanded successfully." : "You have left the team.");
           await loadPage();
         } catch (err) {
           message.error(err instanceof Error ? err.message : "Could not leave team.");
@@ -611,10 +617,77 @@ export default function TeamsPage() {
             <RefreshCw size={16} /> Refresh
           </button>
           <button className="btn btn-ghost danger" onClick={handleLeaveTeam} disabled={submitting}>
-            Leave Team
+            {isLeader && (myTeam.status === "Champion" || myTeam.status === "Eliminated" || myTeam.eventStatus === "Completed") ? "Disband Team" : "Leave Team"}
           </button>
         </div>
       </div>
+
+      {/* Celebration / Final Results Banner */}
+      {myTeam.finalRank && (
+        <div
+          className="glass-card"
+          style={{
+            background: myTeam.status === "Champion" || myTeam.finalRank === 1
+              ? "linear-gradient(135deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.05) 100%)"
+              : "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(79, 70, 229, 0.05) 100%)",
+            borderColor: myTeam.status === "Champion" || myTeam.finalRank === 1
+              ? "rgba(251, 191, 36, 0.4)"
+              : "rgba(99, 102, 241, 0.4)",
+            boxShadow: myTeam.status === "Champion" || myTeam.finalRank === 1
+              ? "0 8px 32px 0 rgba(245, 158, 11, 0.15)"
+              : "0 8px 32px 0 rgba(99, 102, 241, 0.1)",
+            padding: "1.5rem 2rem",
+            marginBottom: "2rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "1.5rem",
+            position: "relative",
+            overflow: "hidden"
+          }}
+        >
+          <div
+            style={{
+              width: 54,
+              height: 54,
+              borderRadius: "50%",
+              background: myTeam.status === "Champion" || myTeam.finalRank === 1
+                ? "rgba(251, 191, 36, 0.2)"
+                : "rgba(99, 102, 241, 0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: myTeam.status === "Champion" || myTeam.finalRank === 1 ? "#fbbf24" : "#6366f1",
+              flexShrink: 0
+            }}
+          >
+            <Crown size={28} style={{ animation: "pulse 2s infinite" }} />
+          </div>
+          <div>
+            <h2
+              style={{
+                margin: 0,
+                fontSize: "1.35rem",
+                fontWeight: 700,
+                color: myTeam.status === "Champion" || myTeam.finalRank === 1 ? "#fbbf24" : "var(--color-text-1)",
+                marginBottom: "0.25rem"
+              }}
+            >
+              {myTeam.status === "Champion" || myTeam.finalRank === 1
+                ? "Chúc mừng team bạn đã đạt Top 1!"
+                : `Chúc mừng! Team của bạn đã đạt Hạng ${myTeam.finalRank}`}
+            </h2>
+            <p style={{ margin: 0, color: "var(--color-text-2)", fontSize: "0.95rem" }}>
+              {myTeam.finalPrize ? (
+                <>
+                  Bạn nhận được giải thưởng: <strong>{myTeam.finalPrize}</strong>
+                </>
+              ) : (
+                "Cảm ơn đội của bạn đã nỗ lực hết mình và hoàn thành xuất sắc cuộc thi!"
+              )}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Pending Received Invitations / Join Requests Banner */}
       {receivedInvites.length > 0 && (

@@ -33,10 +33,25 @@ interface EventDto {
 
 const STATUS_LABEL: Record<string, string> = {
   Ongoing: "Ongoing",
-  Upcoming: "Upcoming",
+  Upcoming: "Coming Soon",
   Completed: "Completed",
   Cancelled: "Cancelled",
 };
+
+const FEATURED_STATUS_ORDER = ["Ongoing", "Upcoming", "Completed"] as const;
+
+function getFeaturedEvents(events: EventDto[]) {
+  return FEATURED_STATUS_ORDER.flatMap((status) => {
+    const newestEvent = events
+      .filter((event) => event.status === status)
+      .sort((a, b) => {
+        const startDateDifference = new Date(b.startDate).getTime() - new Date(a.startDate).getTime();
+        return startDateDifference || b.eventId.localeCompare(a.eventId);
+      })[0];
+
+    return newestEvent ? [newestEvent] : [];
+  });
+}
 
 function badgeClass(status: string) {
   if (status === "Ongoing") return "badge-success";
@@ -72,6 +87,8 @@ export default function LandingPage() {
     };
     load();
   }, []);
+
+  const featuredEvents = getFeaturedEvents(events);
 
   return (
     <div className={styles.container}>
@@ -143,11 +160,11 @@ export default function LandingPage() {
 
           {loading ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-3)" }}>Loading events…</div>
-          ) : events.length === 0 ? (
+          ) : featuredEvents.length === 0 ? (
             <div style={{ textAlign: "center", padding: "3rem", color: "var(--color-text-3)" }}>No events available.</div>
           ) : (
-            <div className="grid-3">
-              {events.map((comp, index) => {
+            <div className={styles.featuredGrid}>
+              {featuredEvents.map((comp, index) => {
                 const teamsCount = comp.categories.reduce((sum, c) => sum + (c.teamCount ?? 0), 0);
                 const statusLabel = STATUS_LABEL[comp.status] || comp.status;
                 return (
@@ -156,8 +173,7 @@ export default function LandingPage() {
                     initial={{ y: 40, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ duration: 0.5, delay: 0.4 + index * 0.1 }}
-                    className="glass-card"
-                    style={{ display: "flex", flexDirection: "column", height: "100%" }}
+                    className={`glass-card ${styles.eventCard}`}
                   >
                     {/* Top Badge */}
                     <div className={styles.cardHeader}>
@@ -210,8 +226,9 @@ export default function LandingPage() {
                         <div className={styles.statLabel}>
                           <Calendar size={12} /> Dates
                         </div>
-                        <div className={styles.statValue} style={{ fontSize: "0.8rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={dateRange(comp.startDate, comp.endDate)}>
-                          {dateRange(comp.startDate, comp.endDate)}
+                        <div className={`${styles.statValue} ${styles.dateValue}`} title={dateRange(comp.startDate, comp.endDate)}>
+                          <span>{formatDate(comp.startDate)}</span>
+                          <span>— {formatDate(comp.endDate)}</span>
                         </div>
                       </div>
                     </div>

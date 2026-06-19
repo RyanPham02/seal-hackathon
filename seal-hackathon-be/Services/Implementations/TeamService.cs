@@ -31,6 +31,7 @@ namespace SEAL.NET.Services.Implementations
                 .Where(tm => tm.UserId == userId)
                 .Include(tm => tm.Team!)
                     .ThenInclude(t => t.Category)
+                        .ThenInclude(c => c.Event)
                 .Include(tm => tm.Team!)
                     .ThenInclude(t => t.CurrentRound)
                 .Include(tm => tm.Team!)
@@ -299,12 +300,14 @@ namespace SEAL.NET.Services.Implementations
                 category = new
                 {
                     team.Category!.CategoryId,
-                    team.Category.CategoryName
+                    team.Category.CategoryName,
+                    eventName = team.Category.Event?.EventName
                 },
                 currentRound = team.CurrentRound == null ? null : new
                 {
                     team.CurrentRound.RoundId,
-                    team.CurrentRound.RoundName
+                    team.CurrentRound.RoundName,
+                    team.CurrentRound.SubmissionDeadline
                 },
                 members = team.Members.Select(m => new
                 {
@@ -326,7 +329,10 @@ namespace SEAL.NET.Services.Implementations
                     id = assignedJudge.Id,
                     fullName = assignedJudge.FullName,
                     email = assignedJudge.Email
-                }
+                },
+                eventStatus = team.Category?.Event?.Status.ToString(),
+                finalRank = team.FinalRank,
+                finalPrize = team.FinalPrize
             });
         }
 
@@ -441,8 +447,11 @@ namespace SEAL.NET.Services.Implementations
 
             if (team.LeaderId == currentUserId)
             {
+                var eventIsCompleted = team.Category?.Event?.Status == EventStatus.Completed;
                 if (team.Members.Count > 1 &&
-                    (team.Status == TeamStatus.Approved || team.Status == TeamStatus.Active || team.Status == TeamStatus.Champion))
+                    (team.Status == TeamStatus.Approved || team.Status == TeamStatus.Active) &&
+                    !eventIsCompleted &&
+                    team.Status != TeamStatus.Champion)
                 {
                     return ServiceResult.BadRequest("Team leader must transfer leadership or remove other members before leaving.");
                 }
@@ -727,7 +736,10 @@ namespace SEAL.NET.Services.Implementations
                     id = assignedJudge.Id,
                     fullName = assignedJudge.FullName,
                     email = assignedJudge.Email
-                }
+                },
+                eventStatus = team.Category?.Event?.Status.ToString(),
+                finalRank = team.FinalRank,
+                finalPrize = team.FinalPrize
             });
         }
 

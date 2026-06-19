@@ -237,6 +237,53 @@
 .radioLabel { font-size: 0.875rem; font-weight: 500; }
 .radioSub   { font-size: 0.75rem;  color: var(--color-text-3); }
 
+.developerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border-2);
+  border-radius: var(--radius-md);
+}
+
+.developerHeading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--color-text);
+}
+
+.languageOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.languageOption {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--color-border-2);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-2);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.languageOption:hover {
+  border-color: var(--color-primary-2);
+  color: var(--color-text);
+}
+
+.languageOptionSelected {
+  border-color: var(--color-primary);
+  background: rgba(99, 102, 241, 0.16);
+  color: var(--color-primary-2);
+}
+
 .stepIndicator {
   display: flex;
   align-items: center;

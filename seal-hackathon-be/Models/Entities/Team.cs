@@ -13,6 +13,11 @@ namespace SEAL.NET.Models.Entities
         public TeamStatus Status { get; set; } = TeamStatus.Pending;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
+        public int? FinalRank { get; set; }
+
+        [MaxLength(200)]
+        public string? FinalPrize { get; set; }
+
         [MaxLength(500)]
         public string? EliminationReason { get; set; }
 

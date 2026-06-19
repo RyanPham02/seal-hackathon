@@ -54,7 +54,7 @@
 .main {
   flex: 1;
   width: 100%;
-  max-width: 1200px;
+  max-width: 1320px;
   margin: 0 auto;
   padding: 3rem 1.5rem;
   display: flex;
@@ -105,6 +105,20 @@
   width: 100%;
 }
 
+.featuredGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+
+.eventCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  padding: 1.75rem;
+}
+
 .sectionTitle {
   font-family: var(--font-display);
   font-size: 1.6rem;
@@ -135,6 +149,7 @@
   font-weight: 700;
   margin-bottom: 0.5rem;
   transition: color var(--transition-fast);
+  overflow-wrap: anywhere;
 }
 
 .cardDesc {
@@ -142,6 +157,7 @@
   color: var(--color-text-2);
   margin-bottom: 1.5rem;
   flex: 1;
+  overflow-wrap: anywhere;
 }
 
 .statsGrid {
@@ -159,6 +175,7 @@
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  min-width: 0;
 }
 
 .statLabel {
@@ -176,6 +193,15 @@
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.dateValue {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .cardAction {
@@ -243,5 +269,21 @@
   75%, 100% {
     transform: scale(2);
     opacity: 0;
+  }
+}
+
+@media (max-width: 960px) {
+  .featuredGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .featuredGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .eventCard {
+    padding: 1.4rem;
   }
 }

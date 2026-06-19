@@ -7,6 +7,12 @@ import { App } from "antd";
 import { apiRequest, fetchCurrentUser } from "@/lib/api";
 import { TRACKS_OPTIONS } from "@/lib/constants";
 
+function toApiDate(value: string): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export default function CreateEventPage() {
   const router = useRouter();
   const { message } = App.useApp();
@@ -107,8 +113,8 @@ export default function CreateEventPage() {
         body: JSON.stringify({
           eventName: form.name.trim(),
           description: form.description.trim() || null,
-          startDate: form.startDate,
-          endDate: form.endDate,
+          startDate: toApiDate(form.startDate),
+          endDate: toApiDate(form.endDate),
         }),
       });
 
@@ -120,7 +126,7 @@ export default function CreateEventPage() {
             method: "POST",
             body: JSON.stringify({
               roundName: round.name.trim(),
-              submissionDeadline: round.deadline,
+              submissionDeadline: toApiDate(round.deadline),
               roundOrder: index + 1,
               maxTeamsAdvancing: Number(round.topN) || 0,
             }),
@@ -219,14 +225,14 @@ export default function CreateEventPage() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div className="form-group">
-                <label className="form-label">Start Date *</label>
-                <input className="form-input" type="date"
+                <label className="form-label">Start Date & Time *</label>
+                <input className="form-input" type="datetime-local"
                   value={form.startDate}
                   onChange={e => setForm({...form, startDate: e.target.value})} />
               </div>
               <div className="form-group">
-                <label className="form-label">End Date *</label>
-                <input className="form-input" type="date"
+                <label className="form-label">End Date & Time *</label>
+                <input className="form-input" type="datetime-local"
                   value={form.endDate}
                   onChange={e => setForm({...form, endDate: e.target.value})} />
               </div>
@@ -269,7 +275,7 @@ export default function CreateEventPage() {
                   </div>
                   <div className="form-group">
                     <label className="form-label"><Clock size={11} /> Submission Deadline *</label>
-                    <input className="form-input" type="date"
+                    <input className="form-input" type="datetime-local"
                       value={r.deadline} onChange={e => setRounds(rounds.map(x => x.id===r.id ? {...x, deadline: e.target.value} : x))} />
                   </div>
                 </div>
